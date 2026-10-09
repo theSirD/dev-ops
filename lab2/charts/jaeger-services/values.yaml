@@ -1,0 +1,5 @@
+jaeger:
+  selector:
+    app.kubernetes.io/component: all-in-one
+    app.kubernetes.io/instance: jaeger
+    app.kubernetes.io/name: jaeger
