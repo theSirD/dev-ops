@@ -1,0 +1,37 @@
+# A single replica keeps /down deterministic: one request disables the only
+# Prometheus target long enough for the ApiDown demonstration alert to fire.
+replicaCount: 1
+
+image:
+  repository: lab2-api
+  tag: latest
+  pullPolicy: IfNotPresent
+
+service:
+  type: ClusterIP
+  port: 8000
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    cpu: 500m
+    memory: 256Mi
+
+otel:
+  endpoint: http://jaeger-collector.monitoring.svc.cluster.local:4318
+  serviceName: api
+
+selfBaseUrl: http://api.app.svc.cluster.local:8000
+
+serviceMonitor:
+  enabled: true
+  interval: 15s
+  path: /metrics
+
+alerts:
+  enabled: true
+  errorRateThreshold: 0.05
+  latencyP95Seconds: 1
+  for: 1m
