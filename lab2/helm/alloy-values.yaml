@@ -1,0 +1,104 @@
+# Grafana Alloy DaemonSet: one agent per node reads pod log files and ships to Loki.
+alloy:
+  configMap:
+    create: true
+    content: |-
+      logging {
+        level  = "info"
+        format = "logfmt"
+      }
+
+      discovery.kubernetes "pod" {
+        role = "pod"
+      }
+
+      discovery.relabel "pod" {
+        targets = discovery.kubernetes.pod.targets
+
+        rule {
+          source_labels = ["__meta_kubernetes_namespace"]
+          action        = "replace"
+          target_label  = "namespace"
+        }
+        rule {
+          source_labels = ["__meta_kubernetes_pod_name"]
+          action        = "replace"
+          target_label  = "pod"
+        }
+        rule {
+          source_labels = ["__meta_kubernetes_pod_container_name"]
+          action        = "replace"
+          target_label  = "container"
+        }
+        rule {
+          source_labels = ["__meta_kubernetes_pod_label_app"]
+          action        = "replace"
+          target_label  = "app"
+        }
+        rule {
+          source_labels = ["__meta_kubernetes_namespace", "__meta_kubernetes_pod_container_name"]
+          action        = "replace"
+          target_label  = "job"
+          separator     = "/"
+          replacement   = "$1"
+        }
+        rule {
+          source_labels = ["__meta_kubernetes_pod_uid", "__meta_kubernetes_pod_container_name"]
+          action        = "replace"
+          target_label  = "__path__"
+          separator     = "/"
+          replacement   = "/var/log/pods/*$1/*.log"
+        }
+        rule {
+          action = "replace"
+          source_labels = ["__meta_kubernetes_pod_container_id"]
+          regex         = "^(\\w+):\\/\\/.+"
+          replacement   = "$1"
+          target_label  = "__tmp_container_runtime"
+        }
+      }
+
+      local.file_match "pod_logs" {
+        path_targets = discovery.relabel.pod.output
+      }
+
+      loki.source.file "pod_logs" {
+        targets    = local.file_match.pod_logs.targets
+        forward_to = [loki.process.add_labels.receiver]
+      }
+
+      loki.process "add_labels" {
+        forward_to = [loki.write.default.receiver]
+      }
+
+      loki.write "default" {
+        endpoint {
+          url = "http://loki.monitoring.svc.cluster.local:3100/loki/api/v1/push"
+        }
+      }
+
+  mounts:
+    varlog:
+      enabled: true
+    dockercontainers:
+      enabled: false
+
+controller:
+  type: daemonset
+  hostPID: false
+
+serviceAccount:
+  create: true
+
+rbac:
+  create: true
+
+crds:
+  create: false
+
+resources:
+  requests:
+    cpu: 20m
+    memory: 64Mi
+  limits:
+    memory: 128Mi
