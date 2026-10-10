@@ -1,0 +1,24 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: no-limits
+  labels:
+    app.kubernetes.io/name: policy-test
+    app.kubernetes.io/component: test
+spec:
+  securityContext:
+    runAsNonRoot: true
+  containers:
+    - name: app
+      image: lab3.local/shop-api:v1
+      imagePullPolicy: Never
+      command: ["sleep", "3600"]
+      resources:
+        requests:
+          cpu: 10m
+          memory: 32Mi
+      securityContext:
+        privileged: false
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop: [ALL]

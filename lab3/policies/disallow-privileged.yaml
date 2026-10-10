@@ -1,0 +1,25 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: disallow-privileged-containers
+spec:
+  validationFailureAction: Enforce
+  background: false
+  rules:
+    - name: reject-privileged-containers
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+      exclude:
+        any:
+          - resources:
+              namespaces: [kube-system, monitoring, kyverno, cnpg-system, local-path-storage]
+      validate:
+        message: "privileged containers are forbidden"
+        pattern:
+          spec:
+            containers:
+              - securityContext:
+                  privileged: false
