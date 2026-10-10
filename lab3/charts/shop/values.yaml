@@ -1,0 +1,22 @@
+api:
+  image: lab3.local/shop-api:v1
+  replicas: 3
+  healthFail: false
+  resources:
+    requests: {cpu: 50m, memory: 96Mi}
+    limits: {cpu: 250m, memory: 256Mi}
+worker:
+  image: lab3.local/shop-worker:v1
+  replicas: 2
+  resources:
+    requests: {cpu: 50m, memory: 96Mi}
+    limits: {cpu: 250m, memory: 256Mi}
+postgres:
+  imageName: ghcr.io/cloudnative-pg/postgresql:16.6
+  storage: 1Gi
+  serviceClusterIP: 10.96.254.10
+  resources:
+    requests: {cpu: 100m, memory: 256Mi}
+    limits: {cpu: 500m, memory: 512Mi}
+monitoring:
+  interval: 15s
