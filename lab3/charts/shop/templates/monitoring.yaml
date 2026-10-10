@@ -1,0 +1,93 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: shop-api
+  labels:
+    release: kube-prometheus-stack
+    {{- include "shop.labels" . | nindent 4 }}
+spec:
+  namespaceSelector:
+    matchNames: [{{ .Release.Namespace }}]
+  selector:
+    matchLabels:
+      {{- include "shop.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: api
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: {{ .Values.monitoring.interval }}
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: shop-alerts
+  labels:
+    release: kube-prometheus-stack
+    {{- include "shop.labels" . | nindent 4 }}
+spec:
+  groups:
+    - name: shop.rules
+      rules:
+        - alert: ShopApiDown
+          expr: max(up{namespace="{{ .Release.Namespace }}",service="api"}) == 0
+          for: 1m
+          labels: {severity: critical, service: shop-api}
+          annotations:
+            summary: Shop API is unavailable
+            description: Prometheus cannot scrape the shop API.
+        - alert: ShopApiErrorRate
+          expr: |
+            sum(rate(shop_http_requests_total{namespace="{{ .Release.Namespace }}",code=~"5.."}[1m]))
+            /
+            sum(rate(shop_http_requests_total{namespace="{{ .Release.Namespace }}"}[1m])) > 0.05
+          for: 1m
+          labels: {severity: critical, service: shop-api}
+          annotations:
+            summary: Shop API returns too many errors
+            description: More than 5 percent of API requests fail.
+        - alert: ShopOrdersLatencyP95
+          expr: |
+            histogram_quantile(0.95, sum(rate(shop_http_request_duration_seconds_bucket{namespace="{{ .Release.Namespace }}",path="/orders"}[2m])) by (le)) > 1
+          for: 1m
+          labels: {severity: warning, service: shop-api}
+          annotations:
+            summary: Shop orders latency is high
+            description: p95 latency for GET /orders is over one second.
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: shop-dashboard
+  labels:
+    grafana_dashboard: "1"
+    {{- include "shop.labels" . | nindent 4 }}
+data:
+  shop.json: |
+    {
+      "title": "Shop API",
+      "uid": "shop-api",
+      "schemaVersion": 39,
+      "panels": [
+        {
+          "type": "timeseries",
+          "title": "Request rate",
+          "gridPos": {"h": 8, "w": 24, "x": 0, "y": 0},
+          "datasource": {"uid": "prometheus"},
+          "targets": [{"expr": "sum(rate(shop_http_requests_total{namespace=\"{{ .Release.Namespace }}\"}[1m]))"}]
+        },
+        {
+          "type": "timeseries",
+          "title": "Order errors",
+          "gridPos": {"h": 8, "w": 24, "x": 0, "y": 8},
+          "datasource": {"uid": "prometheus"},
+          "targets": [{"expr": "sum(rate(shop_http_requests_total{namespace=\"{{ .Release.Namespace }}\",path=\"/order\",code=~\"5..\"}[1m]))"}]
+        },
+        {
+          "type": "timeseries",
+          "title": "Orders p95",
+          "gridPos": {"h": 8, "w": 24, "x": 0, "y": 16},
+          "datasource": {"uid": "prometheus"},
+          "targets": [{"expr": "histogram_quantile(0.95, sum(rate(shop_http_request_duration_seconds_bucket{namespace=\"{{ .Release.Namespace }}\",path=\"/orders\"}[2m])) by (le))"}]
+        }
+      ]
+    }
