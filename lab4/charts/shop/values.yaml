@@ -1,0 +1,57 @@
+api:
+  image: lab3.local/shop-api:v1
+  replicas: 3
+  healthFail: false
+  # topologySpreadConstraints | podAntiAffinity
+  spreading: topologySpreadConstraints
+  priorityClassName: shop-critical
+  resources:
+    # Guaranteed (requests = limits), numbers from krr
+    requests: {cpu: 107m, memory: 100Mi}
+    limits: {cpu: 107m, memory: 100Mi}
+  pdb:
+    minAvailable: 2
+
+worker:
+  image: lab3.local/shop-worker:v1
+  replicas: 2
+  resources:
+    requests: {cpu: 178m, memory: 100Mi}
+    limits: {cpu: 500m, memory: 100Mi}
+
+postgres:
+  imageName: ghcr.io/cloudnative-pg/postgresql:16.6
+  storage: 1Gi
+  serviceClusterIP: 10.96.254.10
+  priorityClassName: shop-critical
+  resources:
+    # CPU above krr's p95 (205m): at 205m postgres was throttled under load
+    requests: {cpu: 500m, memory: 112Mi}
+    limits: {cpu: 500m, memory: 112Mi}
+  pdb:
+    minAvailable: 1
+
+batch:
+  image: lab3.local/shop-batch:v1
+  replicas: 1
+  priorityClassName: shop-low
+  memoryMb: 128
+  cpuWork: 100000
+  cpuDuty: 20
+  nodeSelector: {}
+  resources:
+    # large CPU request, small real burn: scarcity comes from requests, not usage
+    requests: {cpu: 4000m, memory: 128Mi}
+    limits: {cpu: 6000m, memory: 2Gi}
+
+priorityClasses:
+  critical:
+    name: shop-critical
+    value: 1000
+  low:
+    name: shop-low
+    value: -10
+
+monitoring:
+  interval: 15s
+  slaOrderP95Seconds: 2
