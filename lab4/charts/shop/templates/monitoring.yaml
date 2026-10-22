@@ -1,0 +1,166 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: shop-api
+  labels:
+    release: kube-prometheus-stack
+    {{- include "shop.labels" . | nindent 4 }}
+spec:
+  namespaceSelector:
+    matchNames: [{{ .Release.Namespace }}]
+  selector:
+    matchLabels:
+      {{- include "shop.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: api
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: {{ .Values.monitoring.interval }}
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: shop-alerts
+  labels:
+    release: kube-prometheus-stack
+    {{- include "shop.labels" . | nindent 4 }}
+spec:
+  groups:
+    - name: shop.rules
+      rules:
+        # the critical path returns 5xx
+        - alert: ShopApiErrorRate
+          expr: |
+            sum(rate(shop_http_requests_total{namespace="{{ .Release.Namespace }}",code=~"5.."}[2m]))
+            /
+            clamp_min(sum(rate(shop_http_requests_total{namespace="{{ .Release.Namespace }}"}[2m])), 1e-9) > 0.05
+          for: 2m
+          labels: {severity: critical, service: shop-api}
+          annotations:
+            summary: Shop API error rate above 5%
+            description: >-
+              More than 5% of API requests return 5xx — placing an order is broken,
+              not merely slow.
+        # the SLA itself
+        - alert: ShopOrderLatencyP95
+          expr: |
+            histogram_quantile(0.95, sum(rate(shop_http_request_duration_seconds_bucket{namespace="{{ .Release.Namespace }}",path="/order"}[2m])) by (le)) > {{ .Values.monitoring.slaOrderP95Seconds }}
+          for: 2m
+          labels: {severity: warning, service: shop-api}
+          annotations:
+            summary: POST /order p95 above the {{ .Values.monitoring.slaOrderP95Seconds }}s SLA
+            description: >-
+              p95 latency of the order path exceeds the Part 8 SLA budget. This is the
+              alert that must stay silent while batch is being sacrificed.
+        # the pressure that makes us sacrifice batch
+        - alert: ShopNodeMemoryPressure
+          expr: max(kube_node_status_condition{condition="MemoryPressure",status="true"}) == 1
+          for: 30s
+          labels: {severity: warning, service: shop}
+          annotations:
+            summary: A node reports MemoryPressure
+            description: >-
+              The kubelet is reclaiming on a node. Burstable/low-priority batch is
+              expected to be evicted first; Guaranteed api and postgres must survive.
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: shop-dashboard
+  labels:
+    grafana_dashboard: "1"
+    {{- include "shop.labels" . | nindent 4 }}
+data:
+  shop.json: |
+    {
+      "title": "Shop Order Path",
+      "uid": "shop-order-path",
+      "schemaVersion": 39,
+      "time": {"from": "now-30m", "to": "now"},
+      "refresh": "10s",
+      "panels": [
+        {
+          "type": "timeseries",
+          "title": "POST /order p95 latency vs SLA ({{ .Values.monitoring.slaOrderP95Seconds }}s)",
+          "gridPos": {"h": 9, "w": 12, "x": 0, "y": 0},
+          "datasource": {"uid": "prometheus"},
+          "fieldConfig": {
+            "defaults": {
+              "unit": "s",
+              "custom": {"fillOpacity": 10, "lineWidth": 2},
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {"color": "green", "value": null},
+                  {"color": "red", "value": {{ .Values.monitoring.slaOrderP95Seconds }}}
+                ]
+              }
+            }
+          },
+          "options": {"legend": {"displayMode": "table", "calcs": ["lastNotNull", "max"]}},
+          "targets": [
+            {"refId": "A", "expr": "histogram_quantile(0.95, sum(rate(shop_http_request_duration_seconds_bucket{namespace=\"{{ .Release.Namespace }}\",path=\"/order\"}[2m])) by (le))", "legendFormat": "p95"},
+            {"refId": "B", "expr": "histogram_quantile(0.50, sum(rate(shop_http_request_duration_seconds_bucket{namespace=\"{{ .Release.Namespace }}\",path=\"/order\"}[2m])) by (le))", "legendFormat": "p50"},
+            {"refId": "C", "expr": "vector({{ .Values.monitoring.slaOrderP95Seconds }})", "legendFormat": "SLA budget"}
+          ]
+        },
+        {
+          "type": "timeseries",
+          "title": "POST /order error rate vs SLA (1%)",
+          "gridPos": {"h": 9, "w": 12, "x": 12, "y": 0},
+          "datasource": {"uid": "prometheus"},
+          "fieldConfig": {"defaults": {"unit": "percentunit", "min": 0, "custom": {"fillOpacity": 10}}},
+          "targets": [
+            {"refId": "A", "expr": "sum(rate(shop_http_requests_total{namespace=\"{{ .Release.Namespace }}\",path=\"/order\",code=~\"5..\"}[2m])) / clamp_min(sum(rate(shop_http_requests_total{namespace=\"{{ .Release.Namespace }}\",path=\"/order\"}[2m])), 1e-9)", "legendFormat": "5xx share"},
+            {"refId": "B", "expr": "vector(0.01)", "legendFormat": "SLA budget"}
+          ]
+        },
+        {
+          "type": "timeseries",
+          "title": "POST /order throughput by response code",
+          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 9},
+          "datasource": {"uid": "prometheus"},
+          "fieldConfig": {"defaults": {"unit": "reqps", "custom": {"fillOpacity": 30, "stacking": {"mode": "normal"}}}},
+          "targets": [
+            {"refId": "A", "expr": "sum by (code) (rate(shop_http_requests_total{namespace=\"{{ .Release.Namespace }}\",path=\"/order\"}[2m]))", "legendFormat": "{{`{{code}}`}}"}
+          ]
+        },
+        {
+          "type": "timeseries",
+          "title": "What degrades: batch vs the critical path (ready replicas)",
+          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 9},
+          "datasource": {"uid": "prometheus"},
+          "fieldConfig": {"defaults": {"min": 0, "custom": {"lineWidth": 2, "lineInterpolation": "stepAfter"}}},
+          "targets": [
+            {"refId": "A", "expr": "sum(kube_deployment_status_replicas_ready{namespace=\"{{ .Release.Namespace }}\",deployment=\"api\"})", "legendFormat": "api ready (Guaranteed)"},
+            {"refId": "B", "expr": "sum(kube_deployment_spec_replicas{namespace=\"{{ .Release.Namespace }}\",deployment=\"batch\"})", "legendFormat": "batch desired"},
+            {"refId": "C", "expr": "sum(kube_deployment_status_replicas_ready{namespace=\"{{ .Release.Namespace }}\",deployment=\"batch\"})", "legendFormat": "batch ready (Burstable)"},
+            {"refId": "D", "expr": "count(kube_pod_status_phase{namespace=\"{{ .Release.Namespace }}\",phase=\"Pending\"} == 1) or vector(0)", "legendFormat": "pods Pending"}
+          ]
+        },
+        {
+          "type": "timeseries",
+          "title": "CPU usage vs Guaranteed limit",
+          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 17},
+          "datasource": {"uid": "prometheus"},
+          "fieldConfig": {"defaults": {"unit": "short"}},
+          "targets": [
+            {"refId": "A", "expr": "sum(rate(container_cpu_usage_seconds_total{namespace=\"{{ .Release.Namespace }}\",container=\"api\"}[2m]))", "legendFormat": "api usage (cores)"},
+            {"refId": "B", "expr": "sum(kube_pod_container_resource_limits{namespace=\"{{ .Release.Namespace }}\",container=\"api\",resource=\"cpu\"})", "legendFormat": "api limit (cores)"},
+            {"refId": "C", "expr": "sum(rate(container_cpu_usage_seconds_total{namespace=\"{{ .Release.Namespace }}\",container=\"batch\"}[2m]))", "legendFormat": "batch usage (cores)"}
+          ]
+        },
+        {
+          "type": "timeseries",
+          "title": "Node memory pressure and eviction fuel",
+          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 17},
+          "datasource": {"uid": "prometheus"},
+          "fieldConfig": {"defaults": {"unit": "bytes"}},
+          "targets": [
+            {"refId": "A", "expr": "sum by (node) (node_memory_MemAvailable_bytes)", "legendFormat": "available on {{`{{node}}`}}"},
+            {"refId": "B", "expr": "sum(container_memory_working_set_bytes{namespace=\"{{ .Release.Namespace }}\",container=\"batch\"})", "legendFormat": "batch working set"},
+            {"refId": "C", "expr": "sum(container_memory_working_set_bytes{namespace=\"{{ .Release.Namespace }}\",container=\"api\"})", "legendFormat": "api working set"}
+          ]
+        }
+      ]
+    }
