@@ -1,0 +1,97 @@
+# Helm chart: prometheus-community/kube-prometheus-stack 92.10.1
+# Release: lab1; namespace: monitoring. Lab 1, single-node kind.
+fullnameOverride: lab1-monitoring
+
+# Select three application/resource alerts later in the lab.
+defaultRules:
+  create: false
+
+# These control-plane endpoints are not exposed for this kind setup.
+kubeEtcd:
+  enabled: false
+kubeControllerManager:
+  enabled: false
+kubeScheduler:
+  enabled: false
+kubeProxy:
+  enabled: false
+
+grafana:
+  enabled: true
+  fullnameOverride: lab1-grafana
+  # Leave credentials to the chart-generated Kubernetes Secret.
+  adminUser: admin
+  service:
+    type: ClusterIP
+  persistence:
+    enabled: true
+    size: 256Mi
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      memory: 512Mi
+
+prometheus:
+  service:
+    type: ClusterIP
+  prometheusSpec:
+    replicas: 1
+    scrapeInterval: 15s
+    evaluationInterval: 15s
+    retention: 6h
+    retentionSize: 512MB
+    walCompression: true
+    # IP reported by docker inspect; update if lab1-cadvisor is recreated.
+    additionalScrapeConfigs:
+      - job_name: lab1-host-cadvisor
+        scrape_interval: 15s
+        static_configs:
+          - targets: ["172.18.0.3:8080"]
+        metric_relabel_configs:
+          - source_labels: [name]
+            regex: lab1-gvisor
+            action: keep
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        memory: 1Gi
+    storageSpec:
+      volumeClaimTemplate:
+        spec:
+          accessModes: [ReadWriteOnce]
+          resources:
+            requests:
+              storage: 1Gi
+
+alertmanager:
+  enabled: true
+  service:
+    type: ClusterIP
+  alertmanagerSpec:
+    replicas: 1
+    retention: 24h
+    resources:
+      requests:
+        cpu: 50m
+        memory: 64Mi
+      limits:
+        memory: 128Mi
+    storage:
+      volumeClaimTemplate:
+        spec:
+          accessModes: [ReadWriteOnce]
+          resources:
+            requests:
+              storage: 128Mi
+
+prometheusOperator:
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      memory: 256Mi

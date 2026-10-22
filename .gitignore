@@ -1,2 +1,14 @@
 .DS_Store
 lab2/.charts-cache/
+
+# Local assistant instructions and course checkout
+/AGENTS.md
+/containerization-and-orchestration/
+
+# Files generated on the remote machine for Lab 1
+/Lab1/lab1-serv
+/Lab1/lab1-api
+/Lab1/tools/
+/Lab1/results/
+/Lab1/gvisor-archive.key
+/Lab1/gvisor-archive-keyring.gpg
