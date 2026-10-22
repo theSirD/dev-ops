@@ -1,0 +1,10 @@
+FROM golang:1.24.4 AS build
+WORKDIR /src
+COPY go.mod main.go ./
+RUN CGO_ENABLED=0 go build -trimpath -o /lab1-serv .
+
+FROM scratch
+COPY --from=build /lab1-serv /lab1-serv
+USER 1000:1000
+EXPOSE 8080
+ENTRYPOINT ["/lab1-serv"]
