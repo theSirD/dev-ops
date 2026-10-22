@@ -1,0 +1,27 @@
+# Отчёт krr (Part 3): рекомендации по ресурсам на основе реального потребления из Prometheus.
+#
+# Как получен: после устойчивой нагрузки на POST /order (k6, 20 запросов/с, около 45 минут;
+# лимиты на время замера были расширены, чтобы потребление не упиралось в потолок).
+# Запуск произведён командой:
+#   krr simple -n shop -r Deployment --history-duration 1 --timeframe_duration 0.25
+
+
+Name    Pods  Type        Container  CPU Req Recommended  CPU Lim Recommended  Mem Req Recommended  Mem Lim Current  Mem Lim Recommended
+api     3     Deployment  api        0.107                unset                104857600 (100Mi)    536870912        104857600 (100Mi)
+batch   1     Deployment  batch      0.846                unset                204472320 (195Mi)    2147483648       204472320 (195Mi)
+worker  2     Deployment  worker     0.178                unset                104857600 (100Mi)    536870912        104857600 (100Mi)
+
+# Как krr считает (стратегия Simple): CPU request = 95-й процентиль потребления, CPU limit
+# не задаётся (unset); память: request = limit = пик потребления + 15% (минимум у krr 100Mi).
+
+# postgres в отчёте krr нет: это CloudNativePG Cluster, состоящий из «голых» подов, а krr
+# перечисляет только Deployment, StatefulSet, DaemonSet, Job, Rollout и StrimziPodSet.
+# Для него та же формула Simple посчитана по метрикам Prometheus за то же окно
+# (скрипт scripts/krr.sh; это вывод скрипта, а не самого krr):
+postgres: cpu p95 = 205m; memory peak 97Mi +15% = 112Mi
+
+# Что в итоге записано в values.yaml:
+#   api       107m / 100Mi, requests = limits (Guaranteed)
+#   postgres  500m / 112Mi, requests = limits (Guaranteed); CPU поднят с расчётных 205m до 500m: при 205m под нагрузкой был троттлинг (см. README, Part 3)
+#   worker    178m / 100Mi, CPU limit 500m (Burstable; Guaranteed по условиям лабы не нужен)
+#   batch     не из krr: Burstable по замыслу (Part 5)
