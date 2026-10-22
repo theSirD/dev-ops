@@ -1,0 +1,49 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: postgres-app
+  labels:
+    {{- include "shop.labels" . | nindent 4 }}
+    app.kubernetes.io/component: postgres
+type: kubernetes.io/basic-auth
+stringData:
+  username: app
+  password: app
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres-direct
+  labels:
+    {{- include "shop.labels" . | nindent 4 }}
+    app.kubernetes.io/component: postgres
+spec:
+  clusterIP: {{ .Values.postgres.serviceClusterIP }}
+  selector:
+    cnpg.io/cluster: postgres
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: 5432
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: postgres
+  labels:
+    {{- include "shop.labels" . | nindent 4 }}
+    app.kubernetes.io/component: postgres
+spec:
+  instances: 1
+  imageName: {{ .Values.postgres.imageName | quote }}
+  priorityClassName: {{ .Values.postgres.priorityClassName | quote }}
+  bootstrap:
+    initdb:
+      database: shop
+      owner: app
+      secret:
+        name: postgres-app
+  storage:
+    size: {{ .Values.postgres.storage }}
+  resources:
+    {{- toYaml .Values.postgres.resources | nindent 4 }}
