@@ -1,0 +1,24 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: trusted-images
+spec:
+  validationFailureAction: Enforce
+  background: false
+  rules:
+    - name: allow-trusted-image-registries
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+      exclude:
+        any:
+          - resources:
+              namespaces: [kube-system, monitoring, kyverno, cnpg-system, local-path-storage]
+      validate:
+        message: "images must come from lab3.local or the CloudNativePG registry"
+        foreach:
+          - list: request.object.spec.containers
+            pattern:
+              image: "lab3.local/* | ghcr.io/cloudnative-pg/*"

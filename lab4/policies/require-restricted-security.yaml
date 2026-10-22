@@ -1,0 +1,29 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: require-restricted-security
+spec:
+  validationFailureAction: Enforce
+  background: false
+  rules:
+    - name: run-as-non-root-and-drop-capabilities
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+      exclude:
+        any:
+          - resources:
+              namespaces: [kube-system, monitoring, kyverno, cnpg-system, local-path-storage]
+      validate:
+        message: "pods must run as non-root and drop all Linux capabilities"
+        pattern:
+          spec:
+            securityContext:
+              runAsNonRoot: true
+            containers:
+              - securityContext:
+                  capabilities:
+                    drop:
+                      - ALL

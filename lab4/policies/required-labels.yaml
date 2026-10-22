@@ -1,0 +1,25 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: required-workload-labels
+spec:
+  validationFailureAction: Enforce
+  background: false
+  rules:
+    - name: require-standard-labels
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+      exclude:
+        any:
+          - resources:
+              namespaces: [kube-system, monitoring, kyverno, cnpg-system, local-path-storage]
+      validate:
+        message: "workloads must have app.kubernetes.io/name and component labels"
+        pattern:
+          metadata:
+            labels:
+              app.kubernetes.io/name: "?*"
+              app.kubernetes.io/component: "?*"
