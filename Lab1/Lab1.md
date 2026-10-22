@@ -2,8 +2,8 @@
 
 Статус: основные эксперименты выполнены, скриншоты добавлены. Осталось выбрать и обосновать три метрики для алертов и сохранить экспорт дашборда.
 
-Задание: [Lab 1 — Your own Docker](../containerization-and-orchestration/lecture-1-docker/lab.md).
-Теория: [Lecture 1](../containerization-and-orchestration/lecture-1-docker/README.md).
+Задание: [Lab 1 — Your own Docker](https://github.com/KeladKaal/containerization-and-orchestration/blob/main-rus/lecture-1-docker/lab.md).
+Теория: [Lecture 1](https://github.com/KeladKaal/containerization-and-orchestration/blob/main-rus/lecture-1-docker/README.md).
 
 ## Цель
 
@@ -41,15 +41,15 @@ CPU-нагрузка расходует до одного логического
 
 ### Запустил процесс: 
 
-![alt text]({92338F92-475B-4BE0-99D5-D20E7610EFC5}.png)
+![alt text](screenshots/part-1/01-service-start.png)
 
 ### Ответ в браузере:
 
-![Браузер]({8304D2D6-90AE-483F-8089-7DD1120D32D9}.png)
+![Браузер](screenshots/part-1/02-browser-health.png)
 
 ### ps тоже показывает пид процесса:
 
-![alt text]({A028917E-E13F-47B1-89B2-D0C969ED7A0B}.png)
+![alt text](screenshots/part-1/03-host-process.png)
 
 Это обычный процесс пользователя с PID `4348`. Отдельных namespaces и лимитов для него пока не задавал: он работает в окружении хоста. Сервис слушает обычный HTTP, поэтому в браузере использовал `http://`, без HTTPS.
 
@@ -67,20 +67,20 @@ CPU-нагрузка расходует до одного логического
 Mount namespace сам по себе не создаёт отдельную корневую файловую систему: файлы хоста в этом опыте остаются доступны в рамках прав пользователя. И namespaces не ограничивают потребление ресурсов — это проверяю дальше через cgroup.
 
 ### Эффект unshare:
-![alt text]({45E58BD3-DD90-4340-96D8-7A13FEC619C9}.png)
+![alt text](screenshots/part-2/01-unshare.png)
 
 ### Запустил сервер:
 Видно, что теперь сервер считает, что у него пид 1
 
-![alt text]({5919ECE5-BF2B-4759-AEF7-4BFC7B710615}.png)
+![alt text](screenshots/part-2/02-service-pid1.png)
 
 
 ### Как выглядит ситуация на хосте под тем же пользователем:
-![alt text]({14ADAC1D-079F-45EC-81DB-16D857D0C168}.png)
+![alt text](screenshots/part-2/03-host-user.png)
 
 При запущенном сервере можем зная пид сделать запрос на сервер:
 
-![alt text]({6F121FA2-766C-4211-8BD0-0719DA64B6F2}.png)
+![alt text](screenshots/part-2/04-nsenter-health.png)
 
 Внутри сервер стал PID 1, а снаружи виден под другим PID и обычным пользователем. Для HTTP-запроса вошёл через `nsenter --net` в его network namespace: loopback хоста и loopback сервиса теперь относятся к разным сетям.
 
@@ -88,24 +88,24 @@ Mount namespace сам по себе не создаёт отдельную ко
 
 Установил лимиты:
 
-![alt text]({6A0B170D-B94E-4E5A-BE55-60C3E267A71B}.png)
+![alt text](screenshots/part-3/01-memory-limit.png)
 
 
 Запустил сервер:
 
-![alt text]({655B83F5-5917-489D-86B0-BD101CC15F25}.png)
+![alt text](screenshots/part-3/02-service-start.png)
 
 Проверил лимиты:
 
-![alt text]({85660223-BBC2-4AFF-8A9E-A6C007C42B90}.png)
+![alt text](screenshots/part-3/03-memory-check.png)
 
 Попытался забрать больше памяти чем положено, оом сработал:
 
-![alt text]({09D37A93-C1A6-432F-8FBC-21D23D57AEF0}.png)
+![alt text](screenshots/part-3/04-memory-oom.png)
 
 Приложение завершилось:
 
-![alt text]({7F19582C-CC7E-4F3C-82F1-2551203E9573}.png)
+![alt text](screenshots/part-3/05-service-killed.png)
 
 Поставил `memory.max=134217728`, то есть 128 МиБ, и `memory.swap.max=0`, чтобы процесс не ушёл в swap. Запрос на 256 МиБ превысил лимит. В `memory.events` получил `oom=1` и `oom_kill=1`, а список `cgroup.procs` стал пустым. После завершения процесса память освободилась, поэтому небольшое значение `memory.current` после опыта не означает, что лимит не сработал: событие осталось в счётчике.
 
@@ -113,11 +113,11 @@ Mount namespace сам по себе не создаёт отдельную ко
 
 Ограничения задал:
 
-![alt text]({148C1FA3-7398-4012-A0C5-E578EFA5B761}.png)
+![alt text](screenshots/part-3/06-cpu-limit.png)
 
 Сервис тротлит, что видно по статистике, но продолжает отвечать:
 
-![alt text]({7B64B41E-103E-4258-AC32-6FF5E9E0551D}.png)
+![alt text](screenshots/part-3/07-cpu-throttling.png)
 
 `cpu.max=50000 100000` даёт всей группе 50 мс CPU-времени на период 100 мс — в среднем половину ядра. Когда квота заканчивается, задачи ждут следующего периода, процесс при этом не убивается. Между двумя замерами `nr_periods` и `nr_throttled` выросли на 403: ограничение срабатывало в каждом из этих периодов. `/health` продолжал возвращать `ok`.
 
@@ -125,15 +125,15 @@ Mount namespace сам по себе не создаёт отдельную ко
 
 Создали сгруп и проверил настройки
 
-![alt text]({563161EB-581C-4B03-8898-A71E64F37194}.png)
+![alt text](screenshots/part-3/08-pids-limit.png)
 
 Запустил стресс-тест
 
-![alt text]({19AEE012-33D2-454A-ADAD-A130AD2C74B7}.png)
+![alt text](screenshots/part-3/09-fork-load.png)
 
 Увидел увеличение счётчика:
 
-![alt text]({350C6D69-666A-4728-A5E5-AF05D2B21AC5}.png)
+![alt text](screenshots/part-3/10-pids-events.png)
 
 Здесь лимит `pids.max=32`: `pids.current` держится на 32, а `pids.events max` растёт из-за отказов создать новые задачи. Это разные показатели — текущее число задач и накопленное число срабатываний лимита. Учитываются и процессы, и потоки. После завершения нагрузки `pids.current` упал до 0, итоговый счётчик `max` остался равен 1763615.
 
@@ -143,37 +143,37 @@ Mount namespace сам по себе не создаёт отдельную ко
 
 Ограничил возможности пользователя в изолированном пространстве:
 
-![alt text](image.png)
+![alt text](screenshots/part-4/01-capabilities.png)
 
 После `setpriv` UID внутри остался равен 0, но наборы capabilities обнулились. Смена hostname до сброса работала, после — получила отказ. То есть одного имени root недостаточно для привилегированной операции: нужна соответствующая capability. `no_new_privs=1` дополнительно запрещает получать новые привилегии через `exec`. Обычные действия, разрешённые правами пользователя, остаются доступны.
 
 С хоста достаём до сервера при том, что доступы на предыдущем скрине отобрали:
 
-![alt text]({CF8511AE-45F2-49C3-84B6-2CFD92890A91}.png)
+![alt text](screenshots/part-4/02-health-after-cap-drop.png)
 
 ### seccomp
 
 Сначала вызвал `getppid()` без фильтра — он вернул PID родителя. Затем через `enosys` подготовил `seccomp.bpf`, который для этого вызова возвращает `EPERM`:
 
-![alt text]({4DA7CF33-CE4A-4322-BA1D-DE20AE4DC142}.png)
+![alt text](screenshots/part-4/03-seccomp-getppid.png)
 
 В `strace` видно `getppid() = -1 EPERM`. Процесс Python при этом завершился с кодом 0: в этом профиле выбрано действие «вернуть ошибку», а не убить процесс. У seccomp бывают и другие действия.
 
-![alt text]({B0F4E7EF-0DEF-4F24-B7FD-D90C3796F74F}.png)
+![alt text](screenshots/part-4/04-service-with-seccomp.png)
 
-![alt text]({51DE07EC-452A-41F1-BEF6-BC3C444FE6B6}.png)
+![alt text](screenshots/part-4/05-seccomp-health.png)
 
 Тот же фильтр не помешал HTTP-сервису ответить на `/health`: этот путь не требует запрещённого вызова. Capabilities ограничивают привилегированные действия, а seccomp фильтрует конкретные системные вызовы — здесь показал оба механизма отдельно.
 
 ## Часть 5. Собственный запуск и сравнение с Docker
 
-Подготовлен [mydocker.sh](mydocker.sh), объединяющий namespaces, cgroup v2, удаление capabilities и загрузку seccomp. [Согласованный контракт и команды проверки](mydocker-spec.md).
+Подготовлен [mydocker.sh](mydocker.sh), объединяющий namespaces, cgroup v2, удаление capabilities и загрузку seccomp. [Согласованный контракт и команды проверки](docs/contracts/mydocker.md).
 
 Лимиты: память 128 MiB, swap 0, CPU 0,5, число задач 64. Внутри сервиса PID 1, на хосте — UID вызывающего пользователя. HTTP доступен через вход в network namespace; корневая файловая система остаётся хостовой. Управляющий процесс находится вне cgroup и очищает её при завершении.
 
 Проверено пользователем на удалённом Debian 2026-10-16: `bash -n mydocker.sh` прошёл без ошибок; управляющий PID — `1783284`, PID сервиса на хосте — `1783296`, внутри — `1`, UID на хосте — `1000`. Скрипт вывел `Самопроверка запуска: OK`, запрос `/health` через `nsenter --net` вернул `ok`. После Ctrl+C отсутствие `/sys/fs/cgroup/lab1-1000-1783284` подтверждено сообщением `cgroup удалена`.
 
-Docker на сервере проверен: Client/Engine `26.1.5+dfsg1`, containerd `1.7.24`, runc `1.1.15`; cgroup v2, драйвер `systemd`; SecurityOptions: AppArmor, встроенный seccomp, cgroupns. [Команды сравнения с Docker](part5-docker.md). Пользователь подтвердил запуск `lab1-docker`: `/health` через `127.0.0.1:8081` вернул `ok`; PID на хосте `1783516`, внутри — `1`; UID `1000`; `CapEff=0`, `NoNewPrivs=1`, `Seccomp=2`. Отображение UID прямое: `0 0 4294967295`. Фактические файлы cgroup показали `memory.max=134217728`, `memory.swap.max=0`, `cpu.max=50000 100000`, `pids.max=64`. После `docker stop lab1-docker` контейнер исчез из `docker ps -a`, как и ожидается при `--rm`.
+Docker на сервере проверен: Client/Engine `26.1.5+dfsg1`, containerd `1.7.24`, runc `1.1.15`; cgroup v2, драйвер `systemd`; SecurityOptions: AppArmor, встроенный seccomp, cgroupns. [Команды сравнения с Docker](docs/docker-comparison.md). Пользователь подтвердил запуск `lab1-docker`: `/health` через `127.0.0.1:8081` вернул `ok`; PID на хосте `1783516`, внутри — `1`; UID `1000`; `CapEff=0`, `NoNewPrivs=1`, `Seccomp=2`. Отображение UID прямое: `0 0 4294967295`. Фактические файлы cgroup показали `memory.max=134217728`, `memory.swap.max=0`, `cpu.max=50000 100000`, `pids.max=64`. После `docker stop lab1-docker` контейнер исчез из `docker ps -a`, как и ожидается при `--rm`.
 
 | Механизм | mydocker.sh | Проверенный запуск Docker |
 |---|---|---|
@@ -190,24 +190,24 @@ Docker на сервере проверен: Client/Engine `26.1.5+dfsg1`, conta
 
 Запустил:
 
-![alt text]({6B3A9EDC-EA06-4D90-9543-A6CC1BFA0A1A}.png)
+![alt text](screenshots/part-5/01-mydocker-start.png)
 
 Проверка работает:
 
-![alt text]({52E0356C-31B4-4B70-A3A4-40106B940529}.png)
+![alt text](screenshots/part-5/02-mydocker-health.png)
 
 
 Запустил докер:
 
-![alt text]({0BCF5012-20BC-411D-892B-A17FAE1AE77E}.png)
+![alt text](screenshots/part-5/03-docker-start.png)
 
 Проверил лимиты настройки, айдишники:
 
-![alt text]({B7A52A9A-5CA5-4B15-8601-E9D2ABCEC6EE}.png)
+![alt text](screenshots/part-5/04-docker-inspect.png)
 
 Завершил контейнер:
 
-![alt text]({2BE016CE-067B-4D79-9382-EC9877B1D420}.png)
+![alt text](screenshots/part-5/05-docker-cleanup.png)
 
 ## Часть 6. Образы и хранение данных
 
@@ -215,15 +215,15 @@ Digest: sha256:20a022e5112a144aa7b7aeb3f22ebf2cdaefcc4aac0d64e8deeee8cdc18b9c0f
 Status: Downloaded newer image for golang:1.24.4
 docker.io/library/golang:1.24.4
 
-Подготовлены [обычный Dockerfile](Dockerfile.single), [multi-stage Dockerfile](Dockerfile), [go.mod](go.mod) и [.dockerignore](.dockerignore) по [согласованному контракту](images-spec.md). [План выполнения](part6-plan.md); [команды первого этапа](part6-images.md).
+Подготовлены [обычный Dockerfile](Dockerfile.single), [multi-stage Dockerfile](Dockerfile), [go.mod](go.mod) и [.dockerignore](.dockerignore) по [согласованному контракту](docs/contracts/images.md). [Команды сборки и проверки](docs/images.md).
 
 Обе сборки используют Go 1.24.4, одинаковые исходники и статическую компиляцию с CGO_ENABLED=0. Обычный образ сохраняет toolchain, конечная стадия multi-stage основана на scratch и содержит только бинарник. Оба образа запускают сервис от UID/GID 1000:1000 на порту 8080.
 
 `CGO_ENABLED=0` здесь нужен, чтобы бинарнику не требовались динамические C-библиотеки и загрузчик, которых нет в `scratch`. Сам Go runtime остаётся внутри бинарника, а ядро всё равно используется хостовое.
 
-Пользователь подтвердил запуск обоих образов 2026-10-17. Контейнер single: `1ebb5f3658ecef706cdeac1c04cd09f4ab94231196283951a2c015df8c552445`, порт хоста 8081; multi: `8ef2bda454e69818dfc9c1e98538ead83330040d0860ef0eb0070597d1f6cdda`, порт 8082. Оба сервиса вывели PID=1 и вернули HTTP 200 с Content-Length: 2. Скриншот `{9F153B32-E711-4445-97A5-38040391AE98}.png` дополнительно подтверждает `single: OK` и `multi: OK`: точное тело `ok` и HTTP 200 для обоих образов.
+Пользователь подтвердил запуск обоих образов 2026-10-17. Контейнер single: `1ebb5f3658ecef706cdeac1c04cd09f4ab94231196283951a2c015df8c552445`, порт хоста 8081; multi: `8ef2bda454e69818dfc9c1e98538ead83330040d0860ef0eb0070597d1f6cdda`, порт 8082. Оба сервиса вывели PID=1 и вернули HTTP 200 с Content-Length: 2. Скриншот `screenshots/part-6/03-health-and-sizes.png` дополнительно подтверждает `single: OK` и `multi: OK`: точное тело `ok` и HTTP 200 для обоих образов.
 
-Для обоих тегов image inspect подтвердил `User=1000:1000`, `Entrypoint=["/lab1-serv"]` и `Ports={"8080/tcp":{}}`. Команды измерения размеров, файловых слоёв и кэша добавлены в [инструкцию](part6-images.md). Измерения и повторное использование кэша подтверждены выводами пользователя и скриншотами.
+Для обоих тегов image inspect подтвердил `User=1000:1000`, `Entrypoint=["/lab1-serv"]` и `Ports={"8080/tcp":{}}`. Команды измерения размеров, файловых слоёв и кэша добавлены в [инструкцию](docs/images.md). Измерения и повторное использование кэша подтверждены выводами пользователя и скриншотами.
 
 | Образ | Размер, байт | Файловые слои | ID |
 |---|---:|---:|---|
@@ -234,9 +234,9 @@ docker.io/library/golang:1.24.4
 
 Builder: BuildKit, instance `default`, driver `docker`. Повторные сборки показали CACHED для WORKDIR, COPY go.mod/main.go и RUN go build в обоих образах. В multi также переиспользован COPY из стадии build. ID после повторных сборок совпадают с исходными измерениями.
 
-Сравнение образов и кэша выполнено, проверка понимания пройдена. Команды опыта с writable layer добавлены в [инструкцию](part6-images.md): запись файла, restart того же контейнера и пересоздание из того же ID образа. Опыт с writable layer подтверждён выводом пользователя: в контейнер `b85ec0619492c22edbc6b139743700a9402654233a987929731e554777ed23d0` записан `/tmp/lab1-proof.txt` со строкой `lab1-proof`. `docker diff` показал `C /tmp` и `A /tmp/lab1-proof.txt`. После restart ID остался прежним, содержимое сохранилось. После stop/rm создан новый контейнер `dfc29e06e79553854a63551d79754e04ad6351cb075a792a9ed7f6477d839bcc` из того же ID образа; проверка подтвердила отсутствие файла. Вывод: restart сохраняет writable layer, удаление контейнера уничтожает его; исходный образ не изменяется. Проверка понимания пройдена.
+Сравнение образов и кэша выполнено, проверка понимания пройдена. Команды опыта с writable layer добавлены в [инструкцию](docs/images.md): запись файла, restart того же контейнера и пересоздание из того же ID образа. Опыт с writable layer подтверждён выводом пользователя: в контейнер `b85ec0619492c22edbc6b139743700a9402654233a987929731e554777ed23d0` записан `/tmp/lab1-proof.txt` со строкой `lab1-proof`. `docker diff` показал `C /tmp` и `A /tmp/lab1-proof.txt`. После restart ID остался прежним, содержимое сохранилось. После stop/rm создан новый контейнер `dfc29e06e79553854a63551d79754e04ad6351cb075a792a9ed7f6477d839bcc` из того же ID образа; проверка подтвердила отсутствие файла. Вывод: restart сохраняет writable layer, удаление контейнера уничтожает его; исходный образ не изменяется. Проверка понимания пройдена.
 
-Подготовлены команды named volume `lab1-images-data` в [инструкции](part6-images.md). Опыт с named volume подтверждён пользователем 2026-10-19. Создан новый `lab1-images-data` с драйвером local. Первый контейнер: `a92f56c2676678d138e69d921ac10918f596d7c055c5f45e98c7741d2977867f`; после stop/rm создан `5cb0a3c228fe66ae94accd00dca6b9b6997d11a229f54c605754ecf081db92ca`. Оба подключали тот же том к `/lab-data`, RW=true, Source=`/var/lib/docker/volumes/lab1-images-data/_data`. В `/lab-data/lab1-proof.txt` записана строка `volume-proof`; после пересоздания точная проверка содержимого прошла. Новый контейнер затем остановлен и удалён, а docker volume inspect подтвердил существование тома.
+Подготовлены команды named volume `lab1-images-data` в [инструкции](docs/images.md). Опыт с named volume подтверждён пользователем 2026-10-19. Создан новый `lab1-images-data` с драйвером local. Первый контейнер: `a92f56c2676678d138e69d921ac10918f596d7c055c5f45e98c7741d2977867f`; после stop/rm создан `5cb0a3c228fe66ae94accd00dca6b9b6997d11a229f54c605754ecf081db92ca`. Оба подключали тот же том к `/lab-data`, RW=true, Source=`/var/lib/docker/volumes/lab1-images-data/_data`. В `/lab-data/lab1-proof.txt` записана строка `volume-proof`; после пересоздания точная проверка содержимого прошла. Новый контейнер затем остановлен и удалён, а docker volume inspect подтвердил существование тома.
 
 Volume — отдельное управляемое Docker хранилище, подключённое через mount, а не writable layer контейнера. Данные в этом опыте находятся за пределами жизненного цикла удаляемого writable layer. Если подключить другой новый том, по пути монтирования будет видно его пустое содержимое, а прежние данные останутся в старом томе. Все практические проверки части 6 и проверка понимания завершены: оба образа работают, размеры/слои/кэш измерены, writable layer исчез после удаления контейнера, named volume сохранил данные после пересоздания. Пользователь правильно объяснил, что файл в /lab-data хранится в отдельном подключённом томе. Том lab1-images-data оставлен на сервере для защиты.
 
@@ -244,31 +244,31 @@ eruano@eruanosrv:~/lab1$ sudo env BUILDKIT_PROGRESS=plain docker build -f Docker
 
 eruano@eruanosrv:~/lab1$ sudo env BUILDKIT_PROGRESS=plain docker build -f Dockerfile -t lab1-api:multi .
 
-![alt text]({82A6328C-AC8C-426A-B4A8-A633D775D13C}.png)
+![alt text](screenshots/part-6/01-image-builds.png)
 
 
 eruano@eruanosrv:~/lab1$ sudo docker image inspect lab1-api:single lab1-api:multi \
   --format '{{json .RepoTags}} User={{.Config.User}} Entrypoint={{json .Config.Entrypoint}} Ports={{json .Config.ExposedPorts}}'
 ["lab1-api:single"] User=1000:1000 Entrypoint=["/lab1-serv"] Ports={"8080/tcp":{}}
 ["lab1-api:multi"] User=1000:1000 Entrypoint=["/lab1-serv"] Ports={"8080/tcp":{}}
-![alt text]({C8B2ED0D-5C5B-4CAD-977B-E0F84561A821}.png)
+![alt text](screenshots/part-6/02-image-config.png)
 
-![alt text]({9F153B32-E711-4445-97A5-38040391AE98}.png)
+![alt text](screenshots/part-6/03-health-and-sizes.png)
 
 Слои сингла:
-![alt text]({A6A9516E-65ED-442D-9F35-3703BE250539}.png)
+![alt text](screenshots/part-6/04-single-history.png)
 
 Слои мультистейджа:
-![alt text]({6ACA4FE7-F2A0-4587-B6CC-99763F194F4A}.png)
+![alt text](screenshots/part-6/05-multi-history.png)
 
 
 Кэш сингл сборки:
 
-![alt text]({F7985A83-3A8B-4D1E-9D7E-2C543C9ACC1B}.png)
+![alt text](screenshots/part-6/06-single-cache.png)
 
 Кэш мультистейдж сборки:
 
-![alt text]({1C06D294-F496-4816-94DD-A3E4C4686DA9}.png)
+![alt text](screenshots/part-6/07-multi-cache.png)
 
 Исходники между этими сборками не менял, поэтому BuildKit взял шаги из кэша. Если поменять `main.go`, изменится вход для `COPY`, и зависящий от него `RUN go build` выполнится заново.
 
@@ -276,21 +276,21 @@ eruano@eruanosrv:~/lab1$ sudo docker image inspect lab1-api:single lab1-api:mult
 
 Запустил контейнер из конкретного ID образа, чтобы при пересоздании не поменялся сам исходный образ:
 
-![Создание контейнера из зафиксированного образа]({991E89E8-4831-4A3D-A22C-A81AB9EC480F}.png)
+![Создание контейнера из зафиксированного образа](screenshots/part-6/08-writable-container.png)
 
 ID первого запуска: `ac3fc853b8aacbed59df0db809c1ffcfddacc24486aaf8820b68f595c695e4a9`.
 
 Записал файл в `/tmp`, а `docker diff` показал добавление файла в записываемом слое:
 
-![Создание файла и изменения в writable layer]({0AD063FB-E2AF-45EE-8563-27170ABE5F11}.png)
+![Создание файла и изменения в writable layer](screenshots/part-6/09-writable-file.png)
 
 Затем повторил полный опыт: после `restart` это тот же контейнер и файл на месте. После `stop/rm` создал новый контейнер из того же образа — файла уже нет. Ошибка `No such object` в начале скрина относится к попытке посмотреть уже удалённый контейнер; ниже показан успешный повтор.
 
-![Файл пережил restart, но исчез после удаления и пересоздания контейнера]({107E6099-5A22-45FC-BFB7-79908BFADA30}.png)
+![Файл пережил restart, но исчез после удаления и пересоздания контейнера](screenshots/part-6/10-recreate-file-lost.png)
 
 ### Тома:
 
-![Файл в named volume сохранился после пересоздания контейнера]({F625CB12-63B5-4562-881C-4BDFCC7B1298}.png)
+![Файл в named volume сохранился после пересоздания контейнера](screenshots/part-6/11-volume-preserved.png)
 
 Теперь файл записан в `/lab-data`, куда подключён том `lab1-images-data`. Контейнер новый, том тот же, поэтому строка `volume-proof` сохранилась. Данные лежат в отдельном хранилище, а не в удаляемом writable layer.
 
@@ -300,16 +300,16 @@ ID первого запуска: `ac3fc853b8aacbed59df0db809c1ffcfddacc24486aaf
 
 Пользователь остановил оба тестовых контейнера; последующий `docker ps` показал пустой список. Проверка `/etc/docker/daemon.json`: файл отсутствует.
 
-[Подготовка gVisor](part7-gvisor.md) содержит команды добавления официального apt-репозитория, установки `runsc`, проверки конфигурации и её применения. Пакет установлен, сервис запущен через gVisor; ниже сохранил результаты и выводы.
+[Подготовка gVisor](docs/gvisor.md) содержит команды добавления официального apt-репозитория, установки `runsc`, проверки конфигурации и её применения. Пакет установлен, сервис запущен через gVisor; ниже сохранил результаты и выводы.
 
 Подтверждена установка пакета `runsc 20261012.0`: `runsc version release-20261012.0`, OCI spec `1.2.1`. Сразу после установки автоматическая регистрация не произошла: `/etc/docker/daemon.json` отсутствовал, Docker `active`, `Default=runc`, runtime `runsc` не перечислен. Проверка `dockerd --validate` завершилась ошибкой отсутствия файла, поэтому перезапуск после `&&` не выполнялся. Причина поведения установщика не установлена. Затем пользователь выполнил `sudo runsc install`: создана запись `runtimes.runsc.path=/usr/bin/runsc` в `daemon.json`. Проверка: `configuration OK`; после перезапуска Docker `active`, `Default=runc`, runtime `runsc` зарегистрирован. В объявленных параметрах runtime `platform=systrap`; на этом этапе фактический запуск приложения ещё не был проверен. Далее подготовлены команды запуска `lab1-api:multi` с `--runtime=runsc`, проверки HTTP и процессов хоста.
 
-![alt text]({42575D8B-DCC2-48B3-BDD8-92F0FEC9CFE4}.png)
+![alt text](screenshots/part-7/01-runsc-registration.png)
 
 
 Подтверждён запуск `lab1-api:multi` через `runsc`: контейнер `c7031988bd1c9c91e90b222a4db42a2376bfa38c72a2cb023192d7e116181f2b`, Status=running, OOMKilled=false, Error пустой. Лог приложения: PID=1. HTTP на `127.0.0.1:8083/health`: 200 OK, тело `ok`. Docker State.Pid=1792355; на хосте это `runsc-sandbox` (UID 0), а не обычный процесс `/lab1-serv`. Также видны `runsc-gofer` PID 1792349, `runsc-fd-parking` и процессы `[gvisor_sentry]`. Командная строка sandbox содержит `--systemd-cgroup=true`, `--cpu-quota 50000`, `--cpu-period 100000`, `--total-memory 134217728`. Пользователь затем прочитал cgroup `/sys/fs/cgroup/system.slice/docker-c7031988bd1c9c91e90b222a4db42a2376bfa38c72a2cb023192d7e116181f2b.scope`: `memory.max=134217728`, `memory.swap.max=0`, `cpu.max=50000 100000`, `pids.max=64`. Настройки лимитов подтвердил чтением файлов cgroup. Позже в части 8 дал этому же сервису нагрузку и посмотрел память, CPU и throttling на дашборде. UID sandbox не является UID приложения внутри gVisor.
 
-![alt text]({CC244158-A2A1-4651-88D6-D6F57D6D9526}.png)
+![alt text](screenshots/part-7/02-sandbox-processes.png)
 
 В обычном Docker и моём `mydocker.sh` системные вызовы приложения обрабатывает ядро хоста. Namespaces меняют видимость ресурсов, cgroups задают лимиты, но ядро остаётся общим — в этом и предел такой изоляции.
 
@@ -324,31 +324,31 @@ ID первого запуска: `ac3fc853b8aacbed59df0db809c1ffcfddacc24486aaf
 
 Сначала посмотрел на сервис без нагрузки: `up=1`, память около 25 млн байт, CPU почти не занят. `up` здесь показывает доступность cAdvisor для Prometheus. Сам HTTP-сервис этим запросом не проверяется.
 
-![Дашборд без нагрузки: доступность cAdvisor, память и CPU]({F52BDE97-6E11-4953-81C6-57FE0FC172C7}.png)
+![Дашборд без нагрузки: доступность cAdvisor, память и CPU](screenshots/part-8/01-dashboard-idle.png)
 
 Сделал сначала выделение памяти, потом включил потребление процессора:
 
-![Запросы выделения 32 МиБ памяти и включения CPU-нагрузки]({2C4A460C-DD0E-4509-B119-483899628E9D}.png)
+![Запросы выделения 32 МиБ памяти и включения CPU-нагрузки](screenshots/part-8/02-load-requests.png)
 
 В 15:34:35 запросил 32 МиБ, сервис ответил `allocated 32 MiB; retained 32 MiB`. В 15:34:48 включил `/burn` и получил `burning`. Это время сервера, `+03:00`.
 
 Графики зашевелились:
 
-![Рост памяти, CPU и throttling после запросов]({667B515A-4D0F-4F2C-94BD-B302D09B9D9B}.png)
+![Рост памяти, CPU и throttling после запросов](screenshots/part-8/03-dashboard-load.png)
 
 Память выросла примерно с 25 до 59–60 млн байт: сервис удерживает выделенные 32 МиБ, плюс остаются его обычные расходы и расходы gVisor. CPU растёт постепенно, потому что на панели считаю `rate(...[1m])` — среднее за минуту, а не мгновенную нагрузку.
 
 4 график - тротлинг:
 
-![Формула и рост доли периодов throttling]({993E2EA6-590D-4216-BFDA-D7FE91EE7E97}.png)
+![Формула и рост доли периодов throttling](screenshots/part-8/04-throttling-query.png)
 
 Throttling считаю как `100 × rate(throttled_periods[1m]) / rate(periods[1m])`. После включения нагрузки доля дошла до 100%: квота заканчивается в каждом учитываемом CFS-периоде. Это не значит, что сервис всё время стоит и совсем не получает CPU. На соседнем графике он как раз потребляет около 0,5 ядра — весь разрешённый лимит.
 
-![CPU около 0,5 ядра и throttling около 100% периодов]({D7930776-74F3-4212-9FBE-4F4E087424CE}.png)
+![CPU около 0,5 ядра и throttling около 100% периодов](screenshots/part-8/05-cpu-quota.png)
 
 Убил процесс:
 
-![После завершения нагрузки память снизилась, CPU начал спадать]({4AF7BCC9-AB2F-4615-AA43-9CBD773946C5}.png)
+![После завершения нагрузки память снизилась, CPU начал спадать](screenshots/part-8/06-load-stopped.png)
 
 Память вернулась примерно к 26 млн байт, CPU на последних точках начал снижаться. Доля throttling на этом снимке ещё высокая: расчёт всё ещё захватывает минуту, в которой была нагрузка. По этому кадру нельзя сказать, что она уже упала до нуля. При этом `up` остался равен 1 — cAdvisor продолжал отвечать во время опыта.
 
@@ -374,7 +374,7 @@ Python `/usr/bin/python3`, версия 3.13.5. Контейнер `lab1-gvisor`
 
 Это исходный замер до нагрузки: CPU-время и throttling накоплены за время существования cgroup. По одной точке текущую загрузку и долю периодов throttling за интервал не посчитать — дальше для графиков использовал `rate`. 28 задач cgroup не означают 28 экземпляров HTTP-сервиса.
 
-Перед установкой общего стека Kubernetes/Helm отсутствовали. Сервер: 16 логических CPU, 15 GiB RAM (14 GiB available); свободно было 27 GiB на / и 9,4 GiB на /var. Docker 26.1.5, cgroup v2/systemd, default runtime runc; lab1-gvisor работал. [Команды установки и создания kind](part8-cluster.md); результат установки приведён ниже.
+Перед установкой общего стека Kubernetes/Helm отсутствовали. Сервер: 16 логических CPU, 15 GiB RAM (14 GiB available); свободно было 27 GiB на / и 9,4 GiB на /var. Docker 26.1.5, cgroup v2/systemd, default runtime runc; lab1-gvisor работал. [Команды установки и создания kind](monitoring/cluster.md); результат установки приведён ниже.
 
 ### Учебный Kubernetes-кластер готов
 
@@ -404,4 +404,4 @@ cAdvisor `v0.60.6` запущен пользователем на хосте, IP
 - `mydocker.sh` и профиль seccomp.
 - `README.md` с описанием и выводами.
 - Скриншоты: PID внутри и снаружи; OOM; throttling; отказы seccomp/capabilities; работа `mydocker.sh`; сравнение размеров образов; дашборд.
-- Остаётся добавить выбор и обоснование трёх метрик для алертов, экспорт JSON дашборда и отдельный `README.md`, который требует задание.
+- Остаётся добавить выбор и обоснование трёх метрик для алертов и экспорт JSON дашборда. Оглавление артефактов и краткие выводы — в [README.md](README.md).

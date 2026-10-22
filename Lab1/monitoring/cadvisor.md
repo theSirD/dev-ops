@@ -120,6 +120,6 @@ rate(container_cpu_usage_seconds_total{job="lab1-host-cadvisor",name="lab1-gviso
 
 Источник настройки: [additionalScrapeConfigs chart](https://github.com/prometheus-community/helm-charts/blob/kube-prometheus-stack-92.10.1/charts/kube-prometheus-stack/values.yaml), [Prometheus configuration](https://prometheus.io/docs/prometheus/latest/configuration/configuration/).
 
-Актуальный статус: cAdvisor и метрики контейнера подтверждены; конфигурация scrape подготовлена, применение Helm и данные в Prometheus/Grafana ещё не подтверждены.
+Актуальный статус: cAdvisor, scrape Prometheus и данные Grafana подтверждены скриншотами в [отчёте](../Lab1.md).
 
-Пользователь сообщил: Grafana вновь работает после повторного port-forward, три предложенных графика добавлены. Численные значения запросов и снимки пока не представлены. Дальше — [дашборд памяти/CPU/throttling и опыт под нагрузкой](experiment.md). Причина предыдущего обрыва port-forward без диагностических логов остаётся неподтверждённой.
+Пользователь сообщил: Grafana вновь работает после повторного port-forward, три предложенных графика добавлены. Скриншоты без нагрузки и под нагрузкой добавлены в отчёт. Дальше — [дашборд памяти/CPU/throttling и опыт под нагрузкой](experiment.md). Причина предыдущего обрыва port-forward без диагностических логов остаётся неподтверждённой.

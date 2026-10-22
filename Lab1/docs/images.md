@@ -318,6 +318,6 @@ Volume должен по-прежнему существовать. Не вып�
 
 Часть 6 практически завершена: данные в named volume пережили пересоздание, тестовый контейнер удалён, том сохранён. Следующая учебная часть — gVisor; её подготовка начинается с проверки runsc и зарегистрированных Docker runtimes.
 
-Статус на 2026-10-17: оба точных HTTP-теста OK; single — 945094396 байт и 10 слоёв, multi — 8089538 байт и 1 слой. BuildKit default/docker переиспользовал COPY/RUN в обоих образах и COPY из builder у multi. Проверка понимания сборок и опыт с writable layer завершены; volume ещё не проверен.
+Статус на 2026-10-17: оба точных HTTP-теста OK; single — 945094396 байт и 10 слоёв, multi — 8089538 байт и 1 слой. BuildKit default/docker переиспользовал COPY/RUN в обоих образах и COPY из builder у multi. Проверка понимания сборок и опыт с writable layer завершены; named volume дополнительно проверен 2026-10-19.
 
 Источники: [multi-stage](https://docs.docker.com/build/building/multi-stage/), [контекст сборки и dockerignore](https://docs.docker.com/build/concepts/context/), [BUILDKIT_PROGRESS](https://docs.docker.com/build/building/variables/#buildkit_progress).

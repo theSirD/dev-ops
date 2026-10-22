@@ -1,0 +1,91 @@
+openapi: 3.0.3
+info:
+  title: Lab 1 api
+  version: 1.0.0
+  description: |
+    Helper service for memory and CPU isolation experiments. All successful
+    responses use text/plain; charset=utf-8. Memory and CPU load persist until
+    process termination. Resource exhaustion may terminate the process instead
+    of producing an HTTP response. Default port is 8080 (override with PORT).
+servers:
+  - url: http://localhost:8080
+paths:
+  /health:
+    get:
+      summary: Check that the HTTP service responds
+      responses:
+        '200':
+          description: Exact body is ok, without a trailing newline
+          content:
+            text/plain:
+              schema:
+                type: string
+                enum: [ok]
+  /eat:
+    get:
+      summary: Allocate and retain additional memory
+      description: |
+        Each successful request adds N MiB (1 MiB = 1048576 bytes).
+        All allocated bytes are written and the allocation is retained across
+        requests. There is no application memory cap other than representable
+        sizes: both the allocation and cumulative retained byte count must fit
+        the platform's signed int. Actual RSS also includes runtime overhead.
+      parameters:
+        - name: mb
+          in: query
+          required: true
+          description: Exactly one positive decimal integer, digits only.
+          schema:
+            type: string
+            pattern: '^[0-9]+$'
+            example: '64'
+      responses:
+        '200':
+          description: Allocation completed; N and T are decimal MiB counts
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: "allocated 64 MiB; retained 64 MiB\n"
+        '400':
+          description: Missing, repeated, malformed, zero, or overflowing mb
+          content:
+            text/plain:
+              schema:
+                type: string
+                enum:
+                  - "mb must be a single positive decimal integer within the platform memory size range\n"
+  /burn:
+    get:
+      summary: Start a single persistent CPU worker
+      description: |
+        Starts one goroutine performing an infinite computation, consuming up
+        to one logical CPU's worth of CPU time. It may migrate between CPUs;
+        there is no affinity pinning. Returns immediately. Repeated calls do
+        not create more workers; /health remains available subject to scheduling.
+      responses:
+        '200':
+          description: CPU worker requested (also returned on repeated calls)
+          content:
+            text/plain:
+              schema:
+                type: string
+                enum: ["burning\n"]
+components:
+  responses:
+    MethodNotAllowed:
+      description: |
+        All documented paths accept only GET; other methods return 405 with
+        Allow: GET and body "method not allowed\n" (HEAD omits the wire body).
+      content:
+        text/plain:
+          schema:
+            type: string
+            enum: ["method not allowed\n"]
+    NotFound:
+      description: Unknown paths return 404 with body "not found\n"
+      content:
+        text/plain:
+          schema:
+            type: string
+            enum: ["not found\n"]
