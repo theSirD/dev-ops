@@ -1,0 +1,65 @@
+api:
+  image: lab5.local/shop-api:v1
+  replicas: 3
+  healthFail: false
+  port: 8000
+  # client entry point, published to the host by kind
+  service:
+    type: NodePort
+    nodePort: 30080
+    # serve NodePort requests from a local pod only; the second hop over the overlay was lossy
+    externalTrafficPolicy: Local
+  # keep serving until kube-proxy drops the pod from the EndpointSlice
+  preStopSleepSeconds: 5
+  resources:
+    requests: {cpu: 100m, memory: 128Mi}
+    limits: {cpu: 500m, memory: 256Mi}
+
+worker:
+  image: lab5.local/shop-worker:v1
+  replicas: 2
+  resources:
+    requests: {cpu: 100m, memory: 100Mi}
+    limits: {cpu: 500m, memory: 256Mi}
+
+postgres:
+  imageName: ghcr.io/cloudnative-pg/postgresql:16.6
+  storage: 1Gi
+  # api and worker reach the database by name, so DNS is on the order path
+  host: postgres-rw
+  port: 5432
+  resources:
+    requests: {cpu: 200m, memory: 256Mi}
+    limits: {cpu: 500m, memory: 512Mi}
+
+# zero trust: default-deny, then only the routes of the access matrix
+networkPolicy:
+  enabled: true
+  api:
+    podLabels: {app.kubernetes.io/component: api}
+    allowFromNamespaces: [client, monitoring]
+    # NodePort traffic carries the node's identity, not a pod's
+    allowFromEntities: [world, host, remote-node]
+    egressToPostgres: true
+  worker:
+    podLabels: {app.kubernetes.io/component: worker}
+    egressToPostgres: true
+  postgres:
+    podLabels: {cnpg.io/cluster: postgres}
+    allowedPort: 5432
+    allowFrom:
+      api: {app.kubernetes.io/component: api}
+      worker: {app.kubernetes.io/component: worker}
+    operatorNamespace: cnpg-system
+    managerPort: 8000
+  dns:
+    enabled: true
+    namespace: kube-system
+    podLabels: {k8s-app: kube-dns}
+    port: 53
+
+monitoring:
+  interval: 15s
+  hubbleNamespace: kube-system
+  errorRate: 0.05
+  dnsFailureRate: 0.05
