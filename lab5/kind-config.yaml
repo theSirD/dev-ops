@@ -1,0 +1,13 @@
+# no default CNI (kindnet ignores NetworkPolicy); 30080 is the api NodePort
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: lab5
+networking:
+  disableDefaultCNI: true
+nodes:
+  - role: control-plane
+    extraPortMappings:
+      - containerPort: 30080
+        hostPort: 30080
+        protocol: TCP
+  - role: worker

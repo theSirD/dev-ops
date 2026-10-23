@@ -1,0 +1,15 @@
+# kube-proxy stays (Part 2 asks for its mode); Hubble gives the traffic map and metrics
+kubeProxyReplacement: false
+operator:
+  replicas: 1
+hubble:
+  relay:
+    enabled: true
+  ui:
+    enabled: true
+  metrics:
+    enabled:
+      - "dns:labelsContext=source_namespace,destination_namespace"
+      - "drop:labelsContext=source_namespace,destination_namespace"
+      - "tcp:labelsContext=source_namespace,destination_namespace"
+      - flow
