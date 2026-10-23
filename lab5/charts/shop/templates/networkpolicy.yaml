@@ -1,0 +1,164 @@
+{{- if .Values.networkPolicy.enabled }}
+{{- $np := .Values.networkPolicy }}
+# deny all traffic by default
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny
+  labels:
+    {{- include "shop.labels" . | nindent 4 }}
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+{{- if $np.dns.enabled }}
+---
+# DNS: services cannot find each other without it
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-dns-egress
+  labels:
+    {{- include "shop.labels" . | nindent 4 }}
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ $np.dns.namespace }}
+          podSelector:
+            matchLabels:
+              {{- toYaml $np.dns.podLabels | nindent 14 }}
+      ports:
+        - {protocol: UDP, port: {{ $np.dns.port }}}
+        - {protocol: TCP, port: {{ $np.dns.port }}}
+{{- end }}
+---
+# who may call api
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: api-ingress
+  labels:
+    {{- include "shop.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- toYaml $np.api.podLabels | nindent 6 }}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        {{- range $np.api.allowFromNamespaces }}
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ . }}
+        {{- end }}
+      ports:
+        - {protocol: TCP, port: {{ $.Values.api.port }}}
+---
+# NodePort entry has the node's identity; plain NetworkPolicy cannot match it
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: api-nodeport-ingress
+  labels:
+    {{- include "shop.labels" . | nindent 4 }}
+spec:
+  endpointSelector:
+    matchLabels:
+      {{- toYaml $np.api.podLabels | nindent 6 }}
+  ingress:
+    - fromEntities:
+        {{- toYaml $np.api.allowFromEntities | nindent 8 }}
+      toPorts:
+        - ports:
+            - {port: {{ $.Values.api.port | quote }}, protocol: TCP}
+{{- if $np.api.egressToPostgres }}
+---
+# api -> postgres
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: api-egress-postgres
+  labels:
+    {{- include "shop.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- toYaml $np.api.podLabels | nindent 6 }}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              {{- toYaml $np.postgres.podLabels | nindent 14 }}
+      ports:
+        - {protocol: TCP, port: {{ $np.postgres.allowedPort }}}
+{{- end }}
+{{- if $np.worker.egressToPostgres }}
+---
+# worker -> postgres
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: worker-egress-postgres
+  labels:
+    {{- include "shop.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- toYaml $np.worker.podLabels | nindent 6 }}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              {{- toYaml $np.postgres.podLabels | nindent 14 }}
+      ports:
+        - {protocol: TCP, port: {{ $np.postgres.allowedPort }}}
+{{- end }}
+---
+# who may reach postgres (api, worker, the CNPG operator)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: postgres-ingress
+  labels:
+    {{- include "shop.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- toYaml $np.postgres.podLabels | nindent 6 }}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- toYaml $np.postgres.allowFrom.api | nindent 14 }}
+        - podSelector:
+            matchLabels:
+              {{- toYaml $np.postgres.allowFrom.worker | nindent 14 }}
+      ports:
+        - {protocol: TCP, port: {{ $np.postgres.allowedPort }}}
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ $np.postgres.operatorNamespace }}
+      ports:
+        - {protocol: TCP, port: {{ $np.postgres.managerPort }}}
+---
+# the CNPG instance manager talks to the Kubernetes API
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: postgres-egress-apiserver
+  labels:
+    {{- include "shop.labels" . | nindent 4 }}
+spec:
+  endpointSelector:
+    matchLabels:
+      {{- toYaml $np.postgres.podLabels | nindent 6 }}
+  egress:
+    - toEntities: [kube-apiserver]
+{{- end }}
