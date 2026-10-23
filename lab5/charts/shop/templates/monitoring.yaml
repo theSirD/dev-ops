@@ -1,0 +1,161 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: shop-api
+  labels:
+    release: kube-prometheus-stack
+    {{- include "shop.labels" . | nindent 4 }}
+spec:
+  namespaceSelector:
+    matchNames: [{{ .Release.Namespace }}]
+  selector:
+    matchLabels:
+      {{- include "shop.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: api
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: {{ .Values.monitoring.interval }}
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: hubble-metrics
+  labels:
+    release: kube-prometheus-stack
+    {{- include "shop.labels" . | nindent 4 }}
+spec:
+  namespaceSelector:
+    matchNames: [{{ .Values.monitoring.hubbleNamespace }}]
+  selector:
+    matchLabels:
+      k8s-app: hubble
+  endpoints:
+    - port: hubble-metrics
+      interval: {{ .Values.monitoring.interval }}
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: shop-network-alerts
+  labels:
+    release: kube-prometheus-stack
+    {{- include "shop.labels" . | nindent 4 }}
+spec:
+  groups:
+    - name: shop.network
+      rules:
+        # a network policy drops traffic of the shop namespace
+        - alert: ShopPolicyDrops
+          expr: |
+            sum(increase(hubble_drop_total{reason="POLICY_DENIED",destination_namespace="{{ .Release.Namespace }}"}[1m]))
+            + sum(increase(hubble_drop_total{reason="POLICY_DENIED",source_namespace="{{ .Release.Namespace }}"}[1m])) > 0
+          for: 30s
+          labels: {severity: warning, service: shop}
+          annotations:
+            summary: Traffic of the shop namespace is denied by a network policy
+            description: >-
+              Hubble counts POLICY_DENIED drops to or from shop pods. Find the pair with
+              `hubble observe -n shop --verdict DROPPED`.
+        # DNS errors, or DNS queries dropped by a policy
+        - alert: ShopDnsFailures
+          expr: |
+            (
+              sum(rate(coredns_dns_responses_total{rcode=~"SERVFAIL|REFUSED"}[2m]))
+              / clamp_min(sum(rate(coredns_dns_responses_total[2m])), 1e-9) > {{ .Values.monitoring.dnsFailureRate }}
+            )
+            or
+            (
+              sum(increase(hubble_drop_total{reason="POLICY_DENIED",protocol="UDP",source_namespace="{{ .Release.Namespace }}"}[1m])) > 0
+            )
+          for: 30s
+          labels: {severity: critical, service: shop}
+          annotations:
+            summary: DNS is failing for the shop namespace
+            description: >-
+              CoreDNS returns SERVFAIL/REFUSED for more than {{ mulf .Values.monitoring.dnsFailureRate 100 }}% of answers, or a
+              network policy drops the DNS queries of shop pods; services cannot resolve postgres-rw and orders fail.
+        # orders fail
+        - alert: ShopApiErrorRate
+          expr: |
+            sum(rate(shop_http_requests_total{namespace="{{ .Release.Namespace }}",code=~"5.."}[1m]))
+            / clamp_min(sum(rate(shop_http_requests_total{namespace="{{ .Release.Namespace }}"}[1m])), 1e-9) > {{ .Values.monitoring.errorRate }}
+          for: 30s
+          labels: {severity: critical, service: shop-api}
+          annotations:
+            summary: Shop API returns 5xx
+            description: >-
+              More than {{ mulf .Values.monitoring.errorRate 100 }}% of API requests fail; the order path is broken.
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: shop-network-dashboard
+  labels:
+    grafana_dashboard: "1"
+    {{- include "shop.labels" . | nindent 4 }}
+data:
+  shop-network.json: |
+    {
+      "title": "Shop Network",
+      "uid": "shop-network",
+      "schemaVersion": 39,
+      "time": {"from": "now-15m", "to": "now"},
+      "refresh": "10s",
+      "panels": [
+        {
+          "type": "timeseries",
+          "title": "Client requests that failed vs shop pods recreated (pod chaos)",
+          "gridPos": {"h": 9, "w": 24, "x": 0, "y": 0},
+          "datasource": {"uid": "prometheus"},
+          "fieldConfig": {"defaults": {"min": 0, "custom": {"lineWidth": 2}}, "overrides": [
+            {"matcher": {"id": "byName", "options": "failed client requests (per min)"}, "properties": [{"id": "color", "value": {"mode": "fixed", "fixedColor": "red"}}]}
+          ]},
+          "targets": [
+            {"refId": "A", "expr": "sum(increase(k6_http_reqs_total{expected_response=\"false\"}[1m])) or vector(0)", "legendFormat": "failed client requests (per min)"},
+            {"refId": "B", "expr": "sum(rate(k6_http_reqs_total[1m])) * 60", "legendFormat": "client requests (per min)"},
+            {"refId": "C", "expr": "count(count_over_time(kube_pod_info{namespace=\"{{ .Release.Namespace }}\",pod=~\"api-.*|worker-.*\"}[1m])) or vector(0)", "legendFormat": "distinct api/worker pods seen in the last minute (5 without chaos)"}
+          ]
+        },
+        {
+          "type": "timeseries",
+          "title": "Connections opened (TCP SYN) by source namespace",
+          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 9},
+          "datasource": {"uid": "prometheus"},
+          "fieldConfig": {"defaults": {"unit": "ops"}},
+          "targets": [
+            {"refId": "A", "expr": "sum by (source_namespace) (rate(hubble_tcp_flags_total{flag=\"SYN\"}[1m]))", "legendFormat": "{{`{{source_namespace}}`}}"}
+          ]
+        },
+        {
+          "type": "timeseries",
+          "title": "Traffic denied by policy (drops per second)",
+          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 9},
+          "datasource": {"uid": "prometheus"},
+          "fieldConfig": {"defaults": {"unit": "ops"}},
+          "targets": [
+            {"refId": "A", "expr": "sum by (reason, source_namespace, destination_namespace) (rate(hubble_drop_total[1m]))", "legendFormat": "{{`{{reason}}`}} {{`{{source_namespace}}`}} -> {{`{{destination_namespace}}`}}"}
+          ]
+        },
+        {
+          "type": "timeseries",
+          "title": "DNS answers by response code (CoreDNS)",
+          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 17},
+          "datasource": {"uid": "prometheus"},
+          "fieldConfig": {"defaults": {"unit": "ops"}},
+          "targets": [
+            {"refId": "A", "expr": "sum by (rcode) (rate(coredns_dns_responses_total[1m]))", "legendFormat": "{{`{{rcode}}`}}"}
+          ]
+        },
+        {
+          "type": "timeseries",
+          "title": "POST /order by response code (api)",
+          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 17},
+          "datasource": {"uid": "prometheus"},
+          "fieldConfig": {"defaults": {"unit": "reqps"}},
+          "targets": [
+            {"refId": "A", "expr": "sum by (code) (rate(shop_http_requests_total{namespace=\"{{ .Release.Namespace }}\",path=\"/order\"}[1m]))", "legendFormat": "{{`{{code}}`}}"}
+          ]
+        }
+      ]
+    }
