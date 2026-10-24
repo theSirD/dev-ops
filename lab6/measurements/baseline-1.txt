@@ -1,0 +1,8 @@
+== baseline: 10 req/s for 3m ==
+requests            1800
+error rate          0.00 %
+latency p50 / p95   17.6 ms / 25.1 ms
+api containers      CPU 92 m   memory 86 MiB
+api sidecars        CPU 0 m   memory 0 MiB
+client sidecar      CPU 0 m   memory 0 MiB
+linkerd control     CPU 0 m   memory 0 MiB
