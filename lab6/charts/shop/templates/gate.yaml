@@ -1,0 +1,82 @@
+{{- if .Values.gate.enabled }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: gate
+  labels:
+    {{- include "shop.labels" . | nindent 4 }}
+---
+# the gate runs helm upgrade on this release, which touches every object of the chart in this namespace
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: gate
+  labels:
+    {{- include "shop.labels" . | nindent 4 }}
+rules:
+  - apiGroups: ["*"]
+    resources: ["*"]
+    verbs: ["*"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: gate
+  labels:
+    {{- include "shop.labels" . | nindent 4 }}
+subjects:
+  - kind: ServiceAccount
+    name: gate
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: gate
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gate
+  labels:
+    {{- include "shop.labels" . | nindent 4 }}
+    app.kubernetes.io/component: gate
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "shop.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: gate
+  template:
+    metadata:
+      labels:
+        {{- include "shop.labels" . | nindent 8 }}
+        app.kubernetes.io/component: gate
+    spec:
+      serviceAccountName: gate
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: gate
+          image: {{ .Values.gate.image | quote }}
+          imagePullPolicy: Never
+          env:
+            - {name: NAMESPACE, value: {{ .Release.Namespace | quote }}}
+            - {name: RELEASE, value: {{ .Release.Name | quote }}}
+            - {name: INTERVAL_SECONDS, value: {{ .Values.gate.intervalSeconds | quote }}}
+            - {name: STEPS, value: {{ .Values.gate.steps | join "," | quote }}}
+            - {name: MAX_ERROR_RATE, value: {{ .Values.gate.maxErrorRate | quote }}}
+            - {name: PROMOTE_ERROR_RATE, value: {{ .Values.gate.promoteErrorRate | quote }}}
+            - {name: MAX_P95_MS, value: {{ .Values.gate.maxP95Ms | quote }}}
+            - {name: MIN_REQUESTS, value: {{ .Values.gate.minRequests | quote }}}
+          resources:
+            requests: {cpu: 20m, memory: 64Mi}
+            limits: {cpu: 200m, memory: 128Mi}
+          securityContext:
+            privileged: false
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+{{- end }}
