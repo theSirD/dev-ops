@@ -1,0 +1,122 @@
+{{- range $ver, $cfg := .Values.api.versions }}
+{{- if $cfg.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api-{{ $ver }}
+  labels:
+    {{- include "shop.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: api
+    version: {{ $ver }}
+spec:
+  replicas: {{ $cfg.replicas }}
+  selector:
+    matchLabels:
+      {{- include "shop.selectorLabels" $ | nindent 6 }}
+      app.kubernetes.io/component: api
+      version: {{ $ver }}
+  template:
+    metadata:
+      labels:
+        {{- include "shop.labels" $ | nindent 8 }}
+        app.kubernetes.io/component: api
+        version: {{ $ver }}
+      {{- if $.Values.mesh.enabled }}
+      annotations:
+        linkerd.io/inject: enabled
+      {{- end }}
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: api
+          image: {{ $.Values.api.image | quote }}
+          imagePullPolicy: Never
+          ports:
+            - name: http
+              containerPort: {{ $.Values.api.port }}
+          env:
+            - name: VERSION
+              value: {{ $ver | quote }}
+            - name: DATABASE_URL
+              value: postgresql://app:app@{{ $.Values.postgres.host }}:{{ $.Values.postgres.port }}/shop
+            {{- range $name, $value := $cfg.env }}
+            - name: {{ $name }}
+              value: {{ $value | quote }}
+            {{- end }}
+          resources:
+            {{- toYaml $.Values.api.resources | nindent 12 }}
+          securityContext:
+            privileged: false
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          readinessProbe:
+            httpGet: {path: /health, port: http}
+            initialDelaySeconds: 3
+            periodSeconds: 3
+            timeoutSeconds: 3
+            failureThreshold: 3
+          livenessProbe:
+            httpGet: {path: /health, port: http}
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 6
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: api-{{ $ver }}
+  labels:
+    {{- include "shop.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: api
+    version: {{ $ver }}
+  {{- if $.Values.mesh.failureAccrual.enabled }}
+  annotations:
+    balancer.linkerd.io/failure-accrual: consecutive
+    balancer.linkerd.io/failure-accrual-consecutive-max-failures: {{ $.Values.mesh.failureAccrual.consecutiveFailures | quote }}
+  {{- end }}
+spec:
+  selector:
+    {{- include "shop.selectorLabels" $ | nindent 4 }}
+    app.kubernetes.io/component: api
+    version: {{ $ver }}
+  ports:
+    - name: http
+      port: {{ $.Values.api.port }}
+      targetPort: http
+---
+{{- end }}
+{{- end }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: api
+  labels:
+    {{- include "shop.labels" . | nindent 4 }}
+    app.kubernetes.io/component: api
+  {{- if or .Values.mesh.retries.enabled .Values.mesh.failureAccrual.enabled }}
+  annotations:
+    {{- if .Values.mesh.retries.enabled }}
+    retry.linkerd.io/http: {{ .Values.mesh.retries.http | quote }}
+    retry.linkerd.io/limit: {{ .Values.mesh.retries.limit | quote }}
+    {{- end }}
+    {{- if .Values.mesh.failureAccrual.enabled }}
+    balancer.linkerd.io/failure-accrual: consecutive
+    balancer.linkerd.io/failure-accrual-consecutive-max-failures: {{ .Values.mesh.failureAccrual.consecutiveFailures | quote }}
+    {{- end }}
+  {{- end }}
+spec:
+  selector:
+    {{- include "shop.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: api
+  ports:
+    - name: http
+      port: {{ .Values.api.port }}
+      targetPort: http

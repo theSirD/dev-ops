@@ -1,0 +1,63 @@
+api:
+  image: lab6.local/shop-api:v1
+  port: 8000
+  resources:
+    requests: {cpu: 100m, memory: 128Mi}
+    limits: {cpu: 500m, memory: 256Mi}
+  # one Deployment, Service and VERSION per entry
+  versions:
+    v1:
+      enabled: true
+      replicas: 2
+      env: {FLAKY: "false", FLAKY_RATE: "0.3"}
+    v2:
+      enabled: true
+      replicas: 2
+      env: {FAIL: "false"}
+  # share of traffic sent to v2, in percent (changed by the gate)
+  canary:
+    weight: 0
+
+worker:
+  image: lab6.local/shop-worker:v1
+  replicas: 1
+  resources:
+    requests: {cpu: 50m, memory: 100Mi}
+    limits: {cpu: 250m, memory: 256Mi}
+
+postgres:
+  imageName: ghcr.io/cloudnative-pg/postgresql:16.6
+  storage: 1Gi
+  host: postgres-rw
+  port: 5432
+  resources:
+    requests: {cpu: 200m, memory: 256Mi}
+    limits: {cpu: 500m, memory: 512Mi}
+
+# Linkerd around api only (postgres and worker stay outside the mesh)
+mesh:
+  enabled: true
+  retries:
+    enabled: true
+    http: 5xx
+    limit: 3
+  failureAccrual:
+    enabled: true
+    consecutiveFailures: 7
+
+# automatic canary controller
+gate:
+  enabled: true
+  image: lab6.local/shop-gate:v1
+  intervalSeconds: 15
+  steps: [10, 30, 50, 80, 100]
+  maxErrorRate: 0.05
+  promoteErrorRate: 0.01
+  maxP95Ms: 500
+  minRequests: 10
+
+monitoring:
+  interval: 15s
+  errorRate: 0.05
+  hiddenErrorRate: 0.10
+  p95Ms: 500
