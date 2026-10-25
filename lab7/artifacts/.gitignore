@@ -1,0 +1,6 @@
+.env
+runtime/
+reports/
+fixtures/repository/
+__pycache__/
+*.pyc

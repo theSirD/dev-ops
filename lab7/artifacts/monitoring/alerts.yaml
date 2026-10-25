@@ -1,0 +1,24 @@
+groups:
+  - name: release-readiness
+    rules:
+      - alert: N8nUnavailable
+        expr: up{job="n8n"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: n8n cannot be scraped for one minute
+      - alert: ReleaseWorkflowErrors
+        expr: sum(rate(n8n_workflow_execution_duration_seconds_count{workflow_id="lab8-release-readiness",status="failed"}[5m])) / clamp_min(sum(rate(n8n_workflow_execution_duration_seconds_count{workflow_id="lab8-release-readiness"}[5m])), 0.000001) > 0.2 and sum(increase(n8n_workflow_execution_duration_seconds_count{workflow_id="lab8-release-readiness"}[5m])) >= 5
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: More than 20 percent of executions fail, with at least five executions in the window
+      - alert: ReleaseWorkflowSlow
+        expr: sum(rate(n8n_workflow_execution_duration_seconds_sum{workflow_id="lab8-release-readiness"}[5m])) / clamp_min(sum(rate(n8n_workflow_execution_duration_seconds_count{workflow_id="lab8-release-readiness"}[5m])), 0.000001) > 120
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: Mean execution duration exceeds two minutes

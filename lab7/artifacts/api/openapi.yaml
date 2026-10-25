@@ -1,0 +1,109 @@
+openapi: 3.0.3
+info:
+  title: Shop release readiness
+  version: 1.0.0
+  description: Local laboratory workflow; assessment never deploys a release.
+servers:
+  - url: http://localhost:5678
+paths:
+  /webhook/release-readiness:
+    post:
+      operationId: analyzeRelease
+      summary: Analyze a known release and persist its report
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReleaseRequest'
+      responses:
+        '200':
+          description: Report saved and verified; status assesses the release
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReleaseReport'
+        '400':
+          description: Invalid JSON object, release identifier or extra fields
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvalidRequest'
+        '404':
+          description: Release identifier is absent from the configured catalog
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReleaseNotFound'
+        '502':
+          description: Dependency, agent output or report persistence failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnalysisFailed'
+components:
+  schemas:
+    ReleaseId:
+      type: string
+      minLength: 1
+      maxLength: 64
+      pattern: '^[a-z0-9][a-z0-9_-]{0,63}$'
+      example: shop-ready
+    ReleaseRequest:
+      type: object
+      additionalProperties: false
+      required: [release_id]
+      properties:
+        release_id:
+          $ref: '#/components/schemas/ReleaseId'
+    ReleaseReport:
+      type: object
+      additionalProperties: false
+      required: [release_id, status, report_path, report]
+      properties:
+        release_id:
+          $ref: '#/components/schemas/ReleaseId'
+        status:
+          type: string
+          enum: [ready, blocked, incomplete]
+        report_path:
+          type: string
+          pattern: '^/data/reports/[a-z0-9][a-z0-9_-]{0,63}-[A-Za-z0-9_-]+\.md$'
+          example: /data/reports/shop-ready-123.md
+        report:
+          type: string
+          minLength: 1
+          description: Exact UTF-8 Markdown content verified after persistence
+    InvalidRequest:
+      type: object
+      additionalProperties: false
+      required: [error, message]
+      properties:
+        error:
+          type: string
+          enum: [invalid_request]
+        message:
+          type: string
+          minLength: 1
+    ReleaseNotFound:
+      type: object
+      additionalProperties: false
+      required: [error, message]
+      properties:
+        error:
+          type: string
+          enum: [release_not_found]
+        message:
+          type: string
+          minLength: 1
+    AnalysisFailed:
+      type: object
+      additionalProperties: false
+      required: [error, message]
+      properties:
+        error:
+          type: string
+          enum: [analysis_failed]
+        message:
+          type: string
+          minLength: 1

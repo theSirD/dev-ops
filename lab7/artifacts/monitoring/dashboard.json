@@ -1,0 +1,131 @@
+{
+  "uid": "lab8-release",
+  "title": "Lab8 — Release readiness",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "5s",
+  "time": {
+    "from": "now-30m",
+    "to": "now"
+  },
+  "timezone": "browser",
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "Частота выполнений",
+      "description": "Все выполнения, включая отвергнутые запросы.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "lab8-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(n8n_workflow_execution_duration_seconds_count{workflow_id=\"lab8-release-readiness\"}[2m]))",
+          "legendFormat": "Частота выполнений"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "single"
+        }
+      }
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "Доля ошибочных выполнений",
+      "description": "Failed в n8n: ошибки входа, зависимостей и обработки. Успешно обнаруженный blocked не является failed.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "lab8-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "(sum(rate(n8n_workflow_execution_duration_seconds_count{workflow_id=\"lab8-release-readiness\",status=\"failed\"}[2m])) or vector(0)) / clamp_min(sum(rate(n8n_workflow_execution_duration_seconds_count{workflow_id=\"lab8-release-readiness\"}[2m])), 0.000001)",
+          "legendFormat": "Доля ошибочных выполнений"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "single"
+        }
+      }
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "Средняя длительность",
+      "description": "Средняя длительность всех завершённых выполнений за две минуты; короткие ошибки валидации снижают среднее.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "lab8-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 16
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(n8n_workflow_execution_duration_seconds_sum{workflow_id=\"lab8-release-readiness\"}[2m])) / clamp_min(sum(rate(n8n_workflow_execution_duration_seconds_count{workflow_id=\"lab8-release-readiness\"}[2m])), 0.000001)",
+          "legendFormat": "Средняя длительность"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "single"
+        }
+      }
+    }
+  ]
+}

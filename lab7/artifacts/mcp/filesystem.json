@@ -1,0 +1,17 @@
+{
+  "port": 8000,
+  "mcpServers": {
+    "files": {
+      "command": "mcp-server-filesystem",
+      "args": ["/data/evidence", "/data/reports"],
+      "tools": ["read_text_file", "write_file"],
+      "outputTransport": "streamableHttp"
+    },
+    "files-sse": {
+      "command": "mcp-server-filesystem",
+      "args": ["/data/evidence", "/data/reports"],
+      "tools": ["read_text_file", "write_file"],
+      "outputTransport": "sse"
+    }
+  }
+}
