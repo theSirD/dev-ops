@@ -1,0 +1,8 @@
+== mesh: 10 req/s for 3m ==
+requests            1801
+error rate          0.00 %
+latency p50 / p95   19.6 ms / 28.5 ms
+api containers      CPU 86 m   memory 94 MiB
+api sidecars        CPU 22 m   memory 12 MiB
+client sidecar      CPU 5 m   memory 6 MiB
+linkerd control     CPU 5 m   memory 107 MiB

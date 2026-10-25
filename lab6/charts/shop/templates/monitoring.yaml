@@ -1,0 +1,168 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: shop-api
+  labels:
+    release: kube-prometheus-stack
+    {{- include "shop.labels" . | nindent 4 }}
+spec:
+  namespaceSelector:
+    matchNames: [{{ .Release.Namespace }}]
+  selector:
+    matchLabels:
+      {{- include "shop.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: api
+    matchExpressions:
+      - {key: version, operator: Exists}
+  targetLabels: [version]
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: {{ .Values.monitoring.interval }}
+---
+# Linkerd proxy metrics: api pods (inbound) and the load client (outbound)
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: linkerd-proxy
+  labels:
+    release: kube-prometheus-stack
+    {{- include "shop.labels" . | nindent 4 }}
+spec:
+  namespaceSelector:
+    matchNames: [{{ .Release.Namespace }}, client]
+  selector:
+    matchExpressions:
+      - {key: linkerd.io/control-plane-ns, operator: Exists}
+  podTargetLabels: [version]
+  podMetricsEndpoints:
+    - port: linkerd-admin
+      path: /metrics
+      interval: {{ .Values.monitoring.interval }}
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: shop-mesh-alerts
+  labels:
+    release: kube-prometheus-stack
+    {{- include "shop.labels" . | nindent 4 }}
+spec:
+  groups:
+    - name: shop.mesh
+      rules:
+        # canary fails: the gate's signal, for a human
+        - alert: ShopCanaryErrorRate
+          expr: |
+            sum(rate(response_total{direction="inbound",srv_port="8000",tls="true",version="v2",classification="failure"}[1m]))
+            / clamp_min(sum(rate(response_total{direction="inbound",srv_port="8000",tls="true",version="v2"}[1m])), 1e-9)
+            > {{ .Values.monitoring.errorRate }}
+          for: 1m
+          labels: {severity: critical, service: shop-api}
+          annotations:
+            summary: v2 returns more than {{ mulf .Values.monitoring.errorRate 100 }}% errors
+            description: >-
+              The canary (api-v2) fails a noticeable share of requests. The gate rolls the release back;
+              this alert tells a human it happened.
+        # retries hide a failing backend from clients
+        - alert: ShopBackendFailuresHidden
+          expr: |
+            (
+              sum(rate(response_total{direction="inbound",srv_port="8000",tls="true",classification="failure"}[2m]))
+              / clamp_min(sum(rate(response_total{direction="inbound",srv_port="8000",tls="true"}[2m])), 1e-9)
+              > {{ .Values.monitoring.hiddenErrorRate }}
+            )
+            and
+            (
+              sum(rate(outbound_http_route_request_statuses_total{parent_name="api",http_status=~"5.."}[2m]))
+              / clamp_min(sum(rate(outbound_http_route_request_statuses_total{parent_name="api"}[2m])), 1e-9)
+              < 0.02
+            )
+          for: 2m
+          labels: {severity: warning, service: shop-api}
+          annotations:
+            summary: a backend fails over {{ mulf .Values.monitoring.hiddenErrorRate 100 }}% of requests, clients do not see it
+            description: >-
+              Backends return many 5xx, but the callers' proxies hide them with retries. The service looks
+              healthy from outside while one version is sick and every request costs extra attempts.
+        # slow tail of any version
+        - alert: ShopApiLatencyP95
+          expr: |
+            histogram_quantile(0.95,
+              sum by (le, version) (rate(response_latency_ms_bucket{direction="inbound",srv_port="8000",tls="true"}[2m]))
+            ) > {{ .Values.monitoring.p95Ms }}
+          for: 2m
+          labels: {severity: warning, service: shop-api}
+          annotations:
+            summary: p95 latency of {{`{{ $labels.version }}`}} is above {{ .Values.monitoring.p95Ms }} ms
+            description: The slow tail of the order path grew; check that version first.
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: shop-mesh-dashboard
+  labels:
+    grafana_dashboard: "1"
+    {{- include "shop.labels" . | nindent 4 }}
+data:
+  shop-mesh.json: |
+    {
+      "title": "Shop Mesh",
+      "uid": "shop-mesh",
+      "schemaVersion": 39,
+      "time": {"from": "now-15m", "to": "now"},
+      "refresh": "10s",
+      "panels": [
+        {
+          "type": "timeseries",
+          "title": "Reliability: what the backend returns vs what the client sees (5xx share)",
+          "gridPos": {"h": 9, "w": 24, "x": 0, "y": 0},
+          "datasource": {"uid": "prometheus"},
+          "fieldConfig": {"defaults": {"unit": "percentunit", "min": 0, "max": 1, "custom": {"lineWidth": 2}}},
+          "targets": [
+            {"refId": "A", "expr": "(sum(rate(response_total{direction=\"inbound\",srv_port=\"8000\",tls=\"true\",classification=\"failure\"}[1m])) or vector(0)) / clamp_min(sum(rate(response_total{direction=\"inbound\",srv_port=\"8000\",tls=\"true\"}[1m])), 1e-9)", "legendFormat": "backend (api inbound proxy)"},
+            {"refId": "B", "expr": "(sum(rate(outbound_http_route_request_statuses_total{parent_name=\"api\",http_status=~\"5..\"}[1m])) or vector(0)) / clamp_min(sum(rate(outbound_http_route_request_statuses_total{parent_name=\"api\"}[1m])), 1e-9)", "legendFormat": "client (what the app sees)"}
+          ]
+        },
+        {
+          "type": "timeseries",
+          "title": "Error share by version (inbound)",
+          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 9},
+          "datasource": {"uid": "prometheus"},
+          "fieldConfig": {"defaults": {"unit": "percentunit", "min": 0, "max": 1}},
+          "targets": [
+            {"refId": "A", "expr": "(sum by (version) (rate(response_total{direction=\"inbound\",srv_port=\"8000\",tls=\"true\",classification=\"failure\"}[1m])) / clamp_min(sum by (version) (rate(response_total{direction=\"inbound\",srv_port=\"8000\",tls=\"true\"}[1m])), 1e-9)) or (sum by (version) (rate(response_total{direction=\"inbound\",srv_port=\"8000\",tls=\"true\"}[1m])) * 0)", "legendFormat": "{{`{{version}}`}}"}
+          ]
+        },
+        {
+          "type": "timeseries",
+          "title": "p95 latency by version (ms)",
+          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 9},
+          "datasource": {"uid": "prometheus"},
+          "fieldConfig": {"defaults": {"unit": "ms", "min": 0}},
+          "targets": [
+            {"refId": "A", "expr": "histogram_quantile(0.95, sum by (le, version) (rate(response_latency_ms_bucket{direction=\"inbound\",srv_port=\"8000\",tls=\"true\"}[1m])))", "legendFormat": "{{`{{version}}`}}"}
+          ]
+        },
+        {
+          "type": "timeseries",
+          "title": "Traffic split: share of requests per version",
+          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 17},
+          "datasource": {"uid": "prometheus"},
+          "fieldConfig": {"defaults": {"unit": "percentunit", "min": 0, "max": 1, "custom": {"fillOpacity": 30, "stacking": {"mode": "normal"}}}},
+          "targets": [
+            {"refId": "A", "expr": "sum by (version) (rate(response_total{direction=\"inbound\",srv_port=\"8000\",tls=\"true\"}[1m])) / ignoring(version) group_left sum(rate(response_total{direction=\"inbound\",srv_port=\"8000\",tls=\"true\"}[1m]))", "legendFormat": "{{`{{version}}`}}"}
+          ]
+        },
+        {
+          "type": "timeseries",
+          "title": "Requests per second by version",
+          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 17},
+          "datasource": {"uid": "prometheus"},
+          "fieldConfig": {"defaults": {"unit": "reqps", "min": 0}},
+          "targets": [
+            {"refId": "A", "expr": "sum by (version) (rate(response_total{direction=\"inbound\",srv_port=\"8000\",tls=\"true\"}[1m]))", "legendFormat": "{{`{{version}}`}}"}
+          ]
+        }
+      ]
+    }
