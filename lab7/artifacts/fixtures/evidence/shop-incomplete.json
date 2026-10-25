@@ -1,0 +1,10 @@
+{
+  "release_id": "shop-incomplete",
+  "base_revision": "cfccb97d7aa8b00940cd4700af27aee0fe69df6f",
+  "target_revision": "24800ead9c5de49f3757788bccab3414662752c1",
+  "checks": {
+    "tests": "unknown",
+    "image_scan": "passed",
+    "migration_review": "passed"
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "port": 8000,
+  "mcpServers": {
+    "git": {
+      "command": "python",
+      "args": ["-m", "mcp_server_git", "--repository", "/data/repository"],
+      "tools": ["git_log", "git_show", "git_diff"],
+      "outputTransport": "streamableHttp"
+    },
+    "git-sse": {
+      "command": "python",
+      "args": ["-m", "mcp_server_git", "--repository", "/data/repository"],
+      "tools": ["git_log", "git_show", "git_diff"],
+      "outputTransport": "sse"
+    }
+  }
+}
